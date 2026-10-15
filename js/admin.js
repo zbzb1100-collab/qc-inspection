@@ -215,7 +215,7 @@ function renderPlanAdmin(root) {
       if (variant === '2F' && !has2F) return;             // 這棟沒有 2F（例如店舖）就不顯示 2F 圖那列
       const p = S.m.plans.find(x => x.unit_id === unit.id && x.variant === variant);
       const r = el('div', 'r'); r.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:6px 0';
-      r.appendChild(el('b', null, `${unit.code} ${variant === '2F' ? '2F 圖' : (has2F ? '標準層（3F 以上）' : '平面圖')}`));
+      r.appendChild(el('b', null, `${unit.code} ${variant === '2F' ? '2F 圖' : (has2F ? '標準層（3F 以上）' : `平面圖（${bld && bld.floors.length ? bld.floors.join('、') : '全部樓層'}）`)}`));
       r.appendChild(el('span', 'tag' + (p ? ' ok' : ''), p ? '已上傳' : '未上傳'));
       const lab = el('label', 'btn ghost small', p ? '更換圖' : '上傳圖'); const fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.style.display = 'none'; lab.appendChild(fi);
       fi.onchange = () => guard(lab, async () => { const f = fi.files[0]; if (!f) return; await uploadPlan(unit, variant, f); await reloadAdmin(); toast('已上傳'); });
