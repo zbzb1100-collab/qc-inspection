@@ -62,17 +62,21 @@ function renderAdmin() {
       onSave: rename('buildings'), onToggle: toggleActive('buildings'), placeholder: '新增棟別，例：G棟' });
     const b = M.get('buildings', adminSel.bld);
     if (b) {
-      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（用「、」或逗號分隔，照順序）`));
+      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
       const fi = el('input'); fi.type = 'text'; fi.value = b.floors.join('、'); fl.appendChild(fi);
-      const gen = el('div', 'inline-add');
-      const a = el('input'); a.type = 'number'; a.value = 2; a.min = 1; const z = el('input'); z.type = 'number'; z.value = 19;
-      const gb = el('button', 'btn ghost small', '填入 起～迄 樓'); gb.type = 'button';
-      gb.onclick = () => { const lo = Number(a.value), hi = Number(z.value); const out = []; for (let i = lo; i <= hi; i++) out.push(i + 'F'); fi.value = out.join('、'); };
-      gen.append(a, el('span', 'hint', '～'), z, gb); fl.appendChild(gen);
       const sv = el('button', 'btn small', '儲存樓層'); sv.onclick = () => guard(sv, async () => {
         const floors = splitNames(fi.value.replace(/\s+/g, '、')); await q(sb.from('buildings').update({ floors }).eq('id', b.id)); await reloadAdmin(); toast('樓層已更新');
       });
-      fl.appendChild(sv); g.body.appendChild(fl);
+      fl.appendChild(sv);
+      // 小工具：一次產生連續樓層，填進上面那格（按了還是要按「儲存樓層」）
+      const nums = b.floors.map(f => parseInt(f)).filter(n => !isNaN(n));
+      const gen = el('details'); const gs = el('summary', 'hint', '小工具：一次填入連續樓層'); gs.style.cursor = 'pointer'; gen.appendChild(gs);
+      const row = el('div', 'inline-add'); row.style.marginTop = '6px';
+      const a = el('input'); a.type = 'number'; a.value = nums.length ? Math.min(...nums) : 1; a.min = 1; const z = el('input'); z.type = 'number'; z.value = nums.length ? Math.max(...nums) : 1;
+      const gb = el('button', 'btn ghost small', '填入上面那格'); gb.type = 'button';
+      gb.onclick = () => { const lo = Number(a.value), hi = Number(z.value); const out = []; for (let i = lo; i <= hi; i++) out.push(i + 'F'); fi.value = out.join('、'); fi.focus(); };
+      row.append(a, el('span', 'hint', '～'), z, gb); gen.appendChild(row); fl.appendChild(gen);
+      g.body.appendChild(fl);
     } }
 
   // 2 戶別
