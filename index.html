@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f5fd1">
+<title>品質查驗系統</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- 登入 -->
+<div class="login" id="login" hidden>
+  <form class="card stack" id="login-form" autocomplete="on">
+    <div><h1>品質查驗系統</h1><span class="hint">請用管理者給你的帳號登入</span></div>
+    <div><label class="f" for="l-email">帳號（Email）</label><input type="email" id="l-email" name="email" autocomplete="username" required></div>
+    <div><label class="f" for="l-pass">密碼</label><input type="password" id="l-pass" name="password" autocomplete="current-password" required></div>
+    <div class="err" id="l-err" role="alert"></div>
+    <button class="btn block" id="l-go" type="submit">登入</button>
+  </form>
+</div>
+
+<!-- 主畫面 -->
+<div id="app" hidden>
+  <header class="topbar">
+    <h1 id="title">品質查驗</h1>
+    <span class="crumb" id="crumb"></span>
+    <button class="iconbtn" id="userbtn" title="登出"></button>
+  </header>
+
+  <main>
+    <!-- 選戶 -->
+    <section class="screen" id="s-pick">
+      <div class="stack">
+        <div class="card stack">
+          <div id="site-wrap"><label class="f">案場</label><select id="site"></select></div>
+          <div><label class="f">檢查類型</label><div class="chips" id="itype"></div></div>
+          <div><label class="f">棟別</label><div class="chips" id="bld"></div></div>
+          <div><label class="f">樓層</label><div class="chips" id="floor"></div></div>
+          <div><label class="f">戶別</label><div class="units" id="units"></div><p class="hint" id="unithint">紅字＝該戶未結案缺失數</p></div>
+          <button class="btn block" id="go">開始檢查</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 填寫 -->
+    <section class="screen" id="s-fill" hidden>
+      <div class="stack">
+        <div class="row" style="align-items:center;gap:12px">
+          <button class="btn ghost" id="back" style="font-size:16px;padding:12px 18px;white-space:nowrap">‹ 上一頁</button>
+          <div style="flex:1;min-width:0"><b id="unitname" style="font-size:17px"></b><span class="hint" id="plannote"></span></div>
+        </div>
+        <p class="hint">在平面圖上<b>點缺失位置</b>就會新增一筆；點已有的編號進去可修改、上傳修繕後照片、複驗結案。</p>
+        <div class="plan" id="plan"><img id="planimg" alt="戶型平面圖" draggable="false"></div>
+        <div class="legend-marks" id="marklegend"></div>
+        <div class="row" style="justify-content:space-between"><b>本戶缺失 <span id="cnt"></span></b><span class="hint">紅＝待修　黃＝已修繕　綠＝結案</span></div>
+        <button class="btn ghost block" id="add-nopos">＋ 新增缺失（不在圖上點位）</button>
+        <div class="list" id="dlist"></div>
+      </div>
+    </section>
+
+    <!-- 報表 -->
+    <section class="screen" id="s-report" hidden>
+      <div class="stack">
+        <div class="card stack">
+          <label class="f">勾選條件撈資料</label>
+          <div class="filters">
+            <select id="f-bld"></select><select id="f-floor"></select>
+            <select id="f-unit"></select><select id="f-cat"></select>
+            <select id="f-status"><option value="">全部狀態</option><option value="todo">待修</option><option value="fixed">已修繕</option><option value="closed">結案</option></select>
+            <select id="f-fixv"></select><select id="f-respv"></select>
+            <select id="f-itype"></select>
+          </div>
+          <div class="row"><button class="btn ghost" id="f-clear">清除條件</button><button class="btn" id="f-go" style="flex:1">查詢</button><button class="btn ghost" id="f-export">匯出 Excel</button></div>
+        </div>
+        <div class="stat"><div><b id="st-all">0</b><small>筆</small></div><div><b id="st-todo">0</b><small>待修</small></div><div><b id="st-closed">0</b><small>結案</small></div></div>
+        <div class="tablewrap"><table><thead><tr><th>戶</th><th>空間</th><th>工項 / 缺失</th><th>修繕廠商 / 責任廠商</th><th>狀態</th></tr></thead><tbody id="rtable"></tbody></table></div>
+        <p class="hint" id="rnote"></p>
+      </div>
+    </section>
+
+    <!-- 管理 -->
+    <section class="screen" id="s-admin" hidden>
+      <div class="stack" id="admin-root"></div>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button id="t-pick" class="on"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>選戶</button>
+    <button id="t-fill"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/></svg>填寫</button>
+    <button id="t-report"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>報表</button>
+    <button id="t-admin" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>管理</button>
+  </nav>
+</div>
+
+<!-- 缺失表單 -->
+<div class="sheet" id="sheet" hidden>
+  <div class="panel">
+    <div class="grab"></div>
+    <div class="row" style="justify-content:space-between"><button class="iconbtn" id="sh-back">‹ 返回</button><span class="status todo" id="sh-status">待修</span></div>
+    <h2><span class="no" id="sh-no">1</span><span id="sh-title">新增缺失</span></h2>
+    <div class="hint" id="sh-where"></div>
+    <div id="sh-cust-wrap"><label class="f">客戶名稱（交屋檢查）</label><input type="text" id="sh-cust" placeholder="選填"></div>
+    <div><label class="f">空間</label><div class="chips" id="sh-space"></div></div>
+    <div><label class="f">工項</label><div class="chips" id="sh-cat"></div></div>
+    <div><label class="f">缺失內容</label><div class="chips" id="sh-item"></div></div>
+    <div class="row">
+      <div style="flex:1;min-width:140px"><label class="f">修繕方式</label><div class="chips" id="sh-method"></div></div>
+      <div style="flex:1;min-width:140px"><label class="f">預計修繕日</label><input type="date" id="sh-date"></div>
+    </div>
+    <div><label class="f">修繕廠商（誰來修，預帶此工項的廠商）</label><div class="chips" id="sh-fixvendor-chips"></div><select id="sh-fixvendor-other" style="margin-top:8px"></select></div>
+    <div><label class="f">責任廠商（誰負責、扣款對象，預帶同修繕廠商，可改）</label><select id="sh-vendor"></select></div>
+    <div><label class="f">缺失照片（修繕前）</label><div class="photos" id="sh-photos"></div></div>
+    <div><label class="f">缺失說明</label><textarea id="sh-desc" placeholder="補充說明（選填）"></textarea></div>
+
+    <div id="sh-repair" class="card stack" hidden style="background:var(--surface2)">
+      <b>修繕與複驗</b>
+      <div class="hint" id="sh-closeinfo"></div>
+      <div id="sh-fixdate-wrap"><label class="f">修繕完成日期（預帶今天，可改）</label><input type="date" id="sh-fixdate"></div>
+      <div><label class="f">修繕後照片</label><div class="photos" id="sh-afterphotos"></div></div>
+      <button class="btn ghost block" id="sh-fixed">① 修繕完成（廠商修好了，等複驗）</button>
+      <button class="btn block" id="sh-pass">② 複驗合格，結案</button>
+      <button class="btn ghost block" id="sh-reopen">複驗不合格／重新開啟，退回待修</button>
+      <button class="btn ghost block" id="sh-nofix">不修，直接結案</button>
+      <textarea id="sh-reason" placeholder="不修原因（必填）" hidden></textarea>
+      <button class="btn danger block" id="sh-nofix-go" hidden>確認不修並結案</button>
+    </div>
+
+    <div class="hint" id="sh-trail"></div>
+    <div class="row">
+      <button class="btn ghost" id="sh-cancel">取消</button>
+      <button class="btn ghost" id="sh-del" hidden>刪除</button>
+      <button class="btn" id="sh-save" style="flex:1">儲存</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="viewer" hidden><img id="viewer-img" alt="照片"></div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="config.js"></script>
+<script src="js/core.js"></script>
+<script src="js/pick.js"></script>
+<script src="js/sheet.js"></script>
+<script src="js/report.js"></script>
+<script src="js/admin.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
