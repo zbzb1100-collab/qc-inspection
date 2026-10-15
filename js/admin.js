@@ -205,10 +205,13 @@ function renderPlanAdmin(root) {
   const unit = M.get('units', adminSel.plUnit);
   if (unit) {
     const marksBox = el('div', 'stack');
+    const bld = M.get('buildings', unit.building_id);
+    const has2F = !bld || bld.floors.includes('2F');
     ['標準層', '2F'].forEach(variant => {
+      if (variant === '2F' && !has2F) return;             // 這棟沒有 2F（例如店舖）就不顯示 2F 圖那列
       const p = S.m.plans.find(x => x.unit_id === unit.id && x.variant === variant);
       const r = el('div', 'r'); r.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:6px 0';
-      r.appendChild(el('b', null, `${unit.code} ${variant === '2F' ? '2F 圖' : '標準層（3F 以上）'}`));
+      r.appendChild(el('b', null, `${unit.code} ${variant === '2F' ? '2F 圖' : (has2F ? '標準層（3F 以上）' : '平面圖')}`));
       r.appendChild(el('span', 'tag' + (p ? ' ok' : ''), p ? '已上傳' : '未上傳'));
       const lab = el('label', 'btn ghost small', p ? '更換圖' : '上傳圖'); const fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.style.display = 'none'; lab.appendChild(fi);
       fi.onchange = () => guard(lab, async () => { const f = fi.files[0]; if (!f) return; await uploadPlan(unit, variant, f); await reloadAdmin(); toast('已上傳'); });
