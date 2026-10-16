@@ -88,14 +88,26 @@ function group(key, title, sub) {
   return { d, body };
 }
 
+function simpleGroup(t, title, sub) {
+  const root = $('admin-root');
+  const g = group(t, title, sub); root.appendChild(g.d); const box = el('div', 'stack'); g.body.appendChild(box);
+  chipEditor(box, { key: t, table: t, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null, rows: M.list(t, false), label: r => r.name,
+    onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i })))),
+    placeholder: '新增' + title });
+}
+
 function renderAdmin() {
   const root = $('admin-root'); root.innerHTML = '';
   root.appendChild(el('div', 'banner', '清單都在這裡自己改，不用找廠商。新增或停用後，填寫頁馬上跟著變。'));
   const siteId = S.sel.siteId;
   renderExcelAdmin(root);
 
+  // 順序跟選戶畫面一致：案場 → 檢查類型 → 棟別／樓層 → 戶別
+  simpleGroup('sites', '案場', '多個案場時，選戶畫面最上面的選單');
+  simpleGroup('inspect_types', '檢查類型', '驗屋前自主檢查、驗交屋…');
+
   // 1 棟別與樓層
-  { const g = group('bld', '棟別與樓層'); root.appendChild(g.d);
+  { const g = group('bld', '棟別與樓層', '選戶畫面的棟別、樓層'); root.appendChild(g.d);
     const box = el('div', 'stack'); g.body.appendChild(box);
     chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId), label: r => r.name,
       onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i })))),
@@ -188,14 +200,8 @@ function renderAdmin() {
       onAdd: names => q(sb.from('vendors').insert(names.map(n => ({ name: n })))),
       placeholder: '新增廠商全名' }); }
 
-  // 6 其他清單
-  { const g = group('misc', '其他清單', '修繕方式、檢查類型、案場'); root.appendChild(g.d);
-    [['repair_methods', '修繕方式'], ['inspect_types', '檢查類型'], ['sites', '案場']].forEach(([t, title]) => {
-      g.body.appendChild(el('label', 'f', title)); const box = el('div', 'stack'); g.body.appendChild(box);
-      chipEditor(box, { key: t, table: t, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null, rows: M.list(t, false), label: r => r.name,
-        onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i })))),
-        placeholder: '新增' + title });
-    }); }
+  // 6 修繕方式
+  simpleGroup('repair_methods', '修繕方式', '填寫時的「修繕方式」按鈕');
 
   // 7 平面圖
   renderPlanAdmin(root);
