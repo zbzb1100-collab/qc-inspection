@@ -1,18 +1,12 @@
 :root{
-  --bg:#eef1f4; --surface:#ffffff; --surface2:#f6f8fa; --line:#d6dce3;
-  --ink:#16212b; --muted:#5f6b78; --accent:#1f5fd1; --accent-ink:#ffffff;
-  --todo:#d9401f; --fixed:#c7850a; --closed:#1e8a4c; --pin:#c81e1e;
+  color-scheme:dark;
+  --bg:#0a111e; --surface:#101a2c; --surface2:#16233a; --line:#223454;
+  --ink:#dfeaff; --muted:#7f97bb; --accent:#22d3ee; --accent-ink:#04141c;
+  --todo:#ff6b5e; --fixed:#fbbf24; --closed:#34d399; --pin:#ff5a4d;
   --font:"Noto Sans TC",-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;
-  --r:10px;
+  --mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  --r:8px;
 }
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1418; --surface:#18202a; --surface2:#1f2933; --line:#33404d;
-  --ink:#e8edf2; --muted:#9aa7b4; --accent:#6ea0ff; --accent-ink:#0b1220;
-  --todo:#ff7a5c; --fixed:#f0b23a; --closed:#4fd184; --pin:#ff5a5a; color-scheme:dark}}
-:root[data-theme="dark"]{
-  --bg:#0f1418; --surface:#18202a; --surface2:#1f2933; --line:#33404d;
-  --ink:#e8edf2; --muted:#9aa7b4; --accent:#6ea0ff; --accent-ink:#0b1220;
-  --todo:#ff7a5c; --fixed:#f0b23a; --closed:#4fd184; --pin:#ff5a5a; color-scheme:dark}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:15px;line-height:1.45;display:flex;flex-direction:column}
 *{box-sizing:border-box}
@@ -177,3 +171,38 @@ summary{font-size:18px}
   #print-root .ph img{width:100%;max-height:7cm;object-fit:contain;border:1px solid #bbb}
   #print-root .ph figcaption{font-size:9pt;color:#444}
 }
+
+/* ---- 科技感主題 ---- */
+body{background-image:linear-gradient(rgba(34,211,238,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(34,211,238,.035) 1px,transparent 1px);background-size:22px 22px;background-attachment:fixed}
+.topbar{background:#0d1626;border-bottom:1px solid var(--line)}
+.topbar h1{font-family:var(--mono);color:var(--accent);letter-spacing:.04em}
+.topbar .crumb{font-family:var(--mono);font-size:13px}
+.iconbtn{border-radius:6px;background:var(--surface)}
+.card,.item,.admin-group,.tablewrap,.stat div{border-radius:var(--r)}
+label.f{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--muted)}
+.chip{border-radius:6px;background:var(--surface)}
+.chip.on,.units button.on{box-shadow:0 0 12px rgba(34,211,238,.35)}
+.units button{background:var(--surface);font-family:var(--mono);border-radius:6px}
+.units button.on{background:rgba(34,211,238,.14);color:var(--accent);border-color:var(--accent)}
+.units button.on .n{color:var(--todo)}
+.btn{border-radius:6px;font-family:var(--mono);letter-spacing:.06em;background:rgba(34,211,238,.1);color:var(--accent);border:1px solid var(--accent);clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
+.btn:active{background:rgba(34,211,238,.25)}
+.btn.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line);font-weight:500;clip-path:none;font-family:var(--font)}
+.btn.danger{background:rgba(255,107,94,.12);color:var(--todo);border:1px solid var(--todo)}
+.item{position:relative;overflow:hidden;padding-left:16px}
+.item::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--todo);box-shadow:0 0 10px var(--todo)}
+.item:has(.no.fixed)::before{background:var(--fixed);box-shadow:0 0 10px var(--fixed)}
+.item:has(.no.closed)::before{background:var(--closed);box-shadow:0 0 10px var(--closed)}
+.item .no,.pin,.sheet h2 .no{font-family:var(--mono);color:#04141c}
+.pin{border-color:#fff;color:#fff}
+.status{font-family:var(--mono);letter-spacing:.04em}
+.stat b{font-family:var(--mono)}
+.stat div:nth-child(2) b{color:var(--todo)}.stat div:nth-child(3) b{color:var(--closed)}
+.tabs{background:#0d1626;border-top:1px solid var(--line)}
+.tabs button{font-family:var(--mono);letter-spacing:.06em}
+.tabs button.on{box-shadow:inset 0 2px var(--accent);text-shadow:0 0 8px rgba(34,211,238,.6)}
+.sheet .panel{border-top:1px solid var(--accent);box-shadow:0 -8px 30px rgba(34,211,238,.12)}
+.toast{background:var(--accent);color:var(--accent-ink);font-family:var(--mono)}
+th{font-family:var(--mono);letter-spacing:.06em}
+.login h1{font-family:var(--mono);color:var(--accent)}
+.plan{background:#fff}
