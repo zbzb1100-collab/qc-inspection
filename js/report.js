@@ -84,16 +84,16 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
   if (!window.XLSX) throw new Error('匯出元件尚未載入，請稍後再試');
   const cnt = await photoCounts(reportRows.map(r => r.id));
   const head = ['編號', '案場', '檢查類型', '棟別', '樓層', '戶別', '客戶名稱', '空間', '工項', '缺失內容', '修繕方式', '修繕廠商', '責任廠商',
-    '預計修繕日', '實際修繕日', '狀態', '結案方式', '不修原因', '缺失說明', '建立者', '建立時間', '最後修改者', '最後修改時間', '修繕前照片數', '修繕後照片數'];
+    '預計修繕日', '實際修繕日', '狀態', '結案方式', '不修原因', '簽認人', '簽認日期', '缺失說明', '建立者', '建立時間', '最後修改者', '最後修改時間', '修繕前照片數', '修繕後照片數'];
   const rows = reportRows.slice().sort((a, b) => a.id - b.id).map(d => [
     d.id, M.name('sites', d.site_id), M.name('inspect_types', d.inspect_type_id), M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id),
     d.customer_name || '', M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
     M.name('repair_methods', d.repair_method_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id),
-    d.planned_date || '', d.fixed_date || '', STATUS[d.status], d.close_type || '', d.close_reason || '', d.description || '',
+    d.planned_date || '', d.fixed_date || '', STATUS[d.status], d.close_type || '', d.close_reason || '', d.signed_name || '', d.signed_date || '', d.description || '',
     M.userName(d.created_by), fmtTime(d.created_at), M.userName(d.updated_by), fmtTime(d.updated_at),
     (cnt[d.id] || {}).before || 0, (cnt[d.id] || {}).after || 0]);
   const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-  ws['!cols'] = head.map((h, i) => ({ wch: [6, 10, 10, 8, 6, 8, 12, 10, 14, 30, 8, 22, 22, 12, 12, 8, 10, 20, 30, 10, 16, 10, 16, 8, 8][i] }));
+  ws['!cols'] = head.map((h, i) => ({ wch: [6, 10, 10, 8, 6, 8, 12, 10, 14, 30, 8, 22, 22, 12, 12, 8, 10, 20, 10, 12, 30, 10, 16, 10, 16, 8, 8][i] }));
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '缺失清單');
   const d = new Date();
   XLSX.writeFile(wb, `品質查驗報表_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);

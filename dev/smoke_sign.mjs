@@ -1,0 +1,45 @@
+// 待簽認流程：需簽認的檢查類型 複驗合格→待簽認→簽認結案；整戶簽認
+import { createRequire } from 'module';
+import fs from 'fs';
+const require = createRequire('/opt/node22/lib/node_modules/');
+const { chromium } = require('playwright');
+const root = new URL('..', import.meta.url).pathname;
+const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');
+const results = []; const fail = [];
+const ok = (c, m) => { results.push((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail.push(m); };
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
+const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage(); const errors = [];
+page.on('pageerror', e => errors.push(e.message));
+await page.addInitScript(mock);
+await page.addInitScript(() => {
+  const T = window.__db.T; T.inspect_types[0].need_sign = true;
+  const base = { site_id: 1, inspect_type_id: 1, building_id: 1, floor: '8F', unit_id: 1, space_id: 2, category_id: 1, item_id: 1, fix_vendor_id: 1, resp_vendor_id: 1,
+    created_by: 'u-staff', created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z', signed_name: null, signed_date: null };
+  T.defects.push({ id: 1, ...base, status: 'fixed', description: 'a' }, { id: 2, ...base, status: 'signing', description: 'b' }, { id: 3, ...base, status: 'signing', description: 'c' });
+  T.defect_photos.push({ id: 1, defect_id: 1, kind: 'after', path: '1/a.jpg', created_by: 'u-staff' });
+});
+await page.route('**/*', r => { const u = r.request().url(); if (u.startsWith('file://')) return r.continue(); if (u.includes('xlsx') || u.includes('supabase')) return r.fulfill({ contentType: 'application/javascript', body: '' }); return r.fulfill({ contentType: 'text/css', body: '' }); });
+await page.goto('file://' + root + 'index.html');
+await page.fill('#l-email', 'staff@x.com'); await page.fill('#l-pass', 'pw'); await page.click('#l-go');
+await page.waitForSelector('#app:not([hidden])');
+await page.click('#floor .chip:has-text("8F")'); await page.click('#units button:has-text("A1")'); await page.click('#go');
+await page.waitForSelector('#dlist .item');
+ok((await page.textContent('#unitsign')).includes('本戶有 2 筆待簽認'), '整戶簽認區塊顯示 2 筆');
+await page.locator('#dlist .item').nth(0).click(); await page.waitForSelector('#sheet:not([hidden])');
+ok((await page.textContent('#sh-pass')).includes('等客戶簽認'), '②按鈕寫明要等簽認');
+await page.click('#sh-pass'); await page.waitForSelector('#sheet', { state: 'hidden' });
+let T = await page.evaluate(() => window.__db.T.defects);
+ok(T[0].status === 'signing', '複驗合格後變待簽認');
+await page.locator('#dlist .item').nth(0).click(); await page.waitForSelector('#sheet:not([hidden])');
+ok(await page.locator('#sh-sign').isVisible() && await page.locator('#sh-reopen').isVisible(), '待簽認：有簽認區與退回');
+await page.click('#sh-signgo'); await page.waitForTimeout(200);
+ok(await page.locator('#sheet').isVisible(), '沒填簽認人不能結案');
+await page.fill('#sh-signname', '王先生'); await page.click('#sh-signgo'); await page.waitForSelector('#sheet', { state: 'hidden' });
+T = await page.evaluate(() => window.__db.T.defects);
+ok(T[0].status === 'closed' && T[0].signed_name === '王先生' && T[0].close_type === '複驗合格', '單筆簽認結案');
+await page.locator('#unitsign input[type=text]').fill('陳小姐'); await page.locator('#unitsign button').click(); await page.waitForTimeout(400);
+T = await page.evaluate(() => window.__db.T.defects);
+ok(T[1].status === 'closed' && T[2].status === 'closed' && T[2].signed_name === '陳小姐', '整戶簽認：其餘 2 筆結案');
+ok(await page.locator('#unitsign').isHidden(), '簽完後整戶簽認區塊消失');
+ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
+console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);

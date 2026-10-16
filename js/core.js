@@ -164,4 +164,5 @@ async function fetchAll(makeQuery) {
 function showViewer(url) { $('viewer-img').src = url; $('viewer').hidden = false; }
 $('viewer').onclick = () => { $('viewer').hidden = true; };
 
-const STATUS = { todo: '待修', fixed: '已修繕', closed: '結案' };
+const STATUS = { todo: '待修', fixed: '已修繕', signing: '待簽認', closed: '結案' };
+const needSign = typeId => !!(M.get('inspect_types', typeId) || {}).need_sign;   // 這個檢查類型複驗後要客戶簽認

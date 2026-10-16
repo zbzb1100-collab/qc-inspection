@@ -130,6 +130,20 @@ function simpleGroup(t, title, sub) {
   chipEditor(box, { key: t, table: t, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null, rows: M.list(t, false), label: r => r.name,
     onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i })))),
     placeholder: '新增' + title });
+  if (t === 'inspect_types') {   // 哪些檢查類型複驗合格後還要客戶簽認
+    const sb2 = el('div', 'stack'); sb2.appendChild(el('label', 'f', '複驗合格後還要「客戶簽認」才結案的檢查類型'));
+    const row = el('div', 'row'); row.style.gap = '14px';
+    M.list('inspect_types').forEach(r => {
+      const lab = el('label', 'hint'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = !!r.need_sign;
+      ck.onchange = () => guard(ck, async () => {
+        const { error } = await sb.from('inspect_types').update({ need_sign: ck.checked }).eq('id', r.id);
+        if (error) { ck.checked = !ck.checked; throw (/need_sign/.test(error.message) ? new Error('要先到 Supabase 執行 7_待簽認.sql') : error); }
+        await reloadAdmin(); toast('已更新');
+      });
+      lab.append(ck, document.createTextNode(' ' + r.name)); row.appendChild(lab);
+    });
+    sb2.appendChild(row); g.body.appendChild(sb2);
+  }
 }
 
 function renderAdmin() {
