@@ -9,6 +9,13 @@ function initReportFilters() {
   const floors = b ? b.floors : [...new Set(M.list('buildings').flatMap(x => x.floors))];
   const fs = $('f-floor'); fs.innerHTML = '<option value="">全部樓層</option>';
   floors.forEach(f => { const o = el('option', null, f); o.value = f; fs.appendChild(o); }); fs.value = RF.floor;
+  // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
+  (async () => {
+    let q = sb.from('defects').select('floor').limit(5000); if (b) q = q.eq('building_id', b.id);
+    const { data } = await q; if (!data) return;
+    const extra = [...new Set(data.map(d => d.floor))].filter(f => !floors.includes(f));
+    extra.forEach(f => { const o = el('option', null, f + '（已關閉）'); o.value = f; fs.appendChild(o); }); fs.value = RF.floor;
+  })();
   fillSelect($('f-unit'), b ? M.unitsOf(b.id) : [], RF.unit, b ? '全部戶別' : '（先選棟別）');
   fillSelect($('f-cat'), M.list('categories'), RF.cat, '全部工項');
   $('f-status').value = RF.status;
