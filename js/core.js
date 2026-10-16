@@ -41,7 +41,13 @@ const M = {
   itemsOf: cid => M.list('items').filter(i => i.category_id === cid),
   vendorsOfCat: cid => S.m.category_vendors.filter(cv => cv.category_id === cid).sort((a, b) => a.sort - b.sort)
     .map(cv => M.get('vendors', cv.vendor_id)).filter(v => v && v.active !== false),
-  spacesOf: tid => M.list('spaces').filter(s => s.inspect_type_id === tid),
+  // 空間別是一份總清單；這戶的平面圖上標過哪些空間，填寫時就只出現那些（＋全室）。這戶還沒標就全部顯示。
+  spacesFor: (unitId, floor, keepId) => {
+    const all = M.list('spaces'); const plan = typeof pickPlan === 'function' ? pickPlan(unitId, floor) : null;
+    const ids = new Set(plan ? S.m.plan_spaces.filter(m => m.plan_id === plan.id).map(m => m.space_id) : []);
+    if (!ids.size) return all;
+    return all.filter(sp => ids.has(sp.id) || sp.name === '全室' || sp.id === keepId);
+  },
   unitsOf: bid => M.list('units').filter(u => u.building_id === bid),
   buildingsOf: sid => M.list('buildings').filter(b => b.site_id === sid),
 };

@@ -123,7 +123,8 @@ ok(d.status === 'closed' && d.close_type === '複驗合格' && d.closed_by === '
 
 // 不修（新增第二筆，不點位）
 await page.click('#add-nopos'); await page.waitForSelector('#sheet:not([hidden])');
-await page.click('#sh-space .chip:has-text("前陽台")'); await page.click('#sh-cat .chip:has-text("10油漆")'); await page.click('#sh-item .chip:has-text("油漆不勻")');
+ok((await page.locator('#sh-space .chip').allTextContents()).join() === '全室,客餐廳', 'A1 平面圖只標了客餐廳→填寫只出現客餐廳與全室，沒有前陽台');
+await page.click('#sh-space .chip:has-text("客餐廳")'); await page.click('#sh-cat .chip:has-text("10油漆")'); await page.click('#sh-item .chip:has-text("油漆不勻")');
 await page.click('#sh-save'); await page.waitForSelector('#sheet', { state: 'hidden' });
 await page.locator('#dlist .item').nth(1).click(); await page.waitForSelector('#sheet:not([hidden])'); await page.waitForTimeout(150);
 await page.click('#sh-nofix'); await page.click('#sh-nofix-go'); await page.waitForTimeout(200);
@@ -167,7 +168,7 @@ await page.locator('details:has(summary:has-text("工項、缺失內容")) .chip
 ok((await page.evaluate(() => window.__db.T.category_vendors.filter(x => x.category_id === 2).length)) === 2, '工項可加掛第二家預設廠商');
 // 排序：把前陽台排序改 -1，填寫頁應排第一
 await page.evaluate(() => { document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('空間別')) d.open = true; }); });
-await page.locator('details:has(summary:has-text("空間別")) .chip:text-is("前陽台")').click();
+await page.locator('details:has(summary:has-text("空間別")) .chip:has-text("前陽台")').click();
 await page.locator('details:has(summary:has-text("空間別")) input[type=number]').first().fill('-1');
 await page.locator('details:has(summary:has-text("空間別")) button:has-text("儲存")').first().click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.spaces.find(s => s.name === '前陽台').sort)) === -1, '排序數字可改');

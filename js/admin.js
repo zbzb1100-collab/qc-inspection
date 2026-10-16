@@ -142,20 +142,18 @@ function renderAdmin() {
       onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i })))),
       placeholder: '新增戶別，例：A9' }); }
 
-  // 3 空間別
-  { const g = group('space', '空間別'); root.appendChild(g.d);
-    const types = M.list('inspect_types', false);
-    if (!types.find(t => t.id === adminSel.spType)) adminSel.spType = (types.find(t => t.id === S.sel.typeId) || types[0] || {}).id;
-    const sel = el('select'); fillSelect(sel, types, adminSel.spType, null); sel.onchange = () => { adminSel.spType = Number(sel.value); adminSel.space = null; renderAdmin(); };
-    g.body.appendChild(el('label', 'f', '空間別依檢查類型分開設定，先選要編輯哪一種的空間別')); g.body.appendChild(sel);
-    const rows = S.m.spaces.filter(s => s.inspect_type_id === adminSel.spType).sort(bySort);
+  // 3 空間別（總清單；每戶有哪些空間，在「平面圖 → 標記空間位置」決定）
+  { const g = group('space', '空間別', '所有可用空間的總清單'); root.appendChild(g.d);
+    g.body.appendChild(el('p', 'hint', '這裡是所有可用的空間。每一戶實際會出現哪些空間，由該戶平面圖上標記的空間決定（管理 → 平面圖 → 標記空間位置）；還沒標的戶會先顯示全部。'));
+    const rows = S.m.spaces.slice().sort(bySort);
+    const typeId = (rows[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'space', table: 'spaces', rows, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
+    chipEditor(box, { key: 'space', table: 'spaces', rows, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
         const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
         for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
         await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
-      } }, label: r => r.name,
-      onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: adminSel.spType, name: n, code: '', sort: nextSort(rows) + k })))),
+      } },
+      onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(rows) + k })))),
       placeholder: '新增空間別，例：玄關' }); }
 
   // 4 工項與缺失內容與廠商對應
@@ -280,9 +278,8 @@ function renderPlanAdmin(root) {
   }
 }
 async function renderMarkEditor(box, plan) {
-  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置，就會在圖上放該空間的標記（有圖面代號就顯示代號，沒有就顯示名稱）'));
-  const types = M.list('inspect_types'); const t = adminSel.mkType && types.find(x => x.id === adminSel.mkType) ? adminSel.mkType : (types.find(x => x.id === S.sel.typeId) || types[0] || {}).id;
-  const spaces = M.spacesOf(t).filter(s => s.name !== '全室');
+  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置＝這戶有這個空間（填缺失時只會出現標過的空間；有圖面代號顯示代號，沒有顯示名稱）'));
+  const spaces = M.list('spaces').filter(s => s.name !== '全室');
   const chipsBox = el('div', 'chips'); box.appendChild(chipsBox);
   const wrap = el('div', 'plan'); const img = el('img'); img.alt = '平面圖'; wrap.appendChild(img); box.appendChild(wrap);
   const marks = S.m.plan_spaces.filter(m => m.plan_id === plan.id);
