@@ -73,7 +73,7 @@ create table if not exists public.units (                  -- 戶別
 create table if not exists public.plans (                  -- 平面圖：標準層、2F 各一張
   id bigint generated always as identity primary key,
   unit_id bigint not null references public.units(id) on delete cascade,
-  variant text not null default '標準層' check (variant in ('標準層','2F')),
+  variant text not null default '標準層',
   path text not null,                                       -- 存在 plans 儲存空間
   created_at timestamptz not null default now(),
   unique (unit_id, variant)

@@ -64,7 +64,8 @@ $('go').onclick = () => {
 // ---------- 填寫 ----------
 function pickPlan(unitId, floor) {
   const plans = S.m.plans.filter(p => p.unit_id === unitId);
-  if (floor === '2F') { const p2 = plans.find(p => p.variant === '2F'); if (p2) return p2; }
+  const own = plans.find(p => p.variant === floor);       // 這層有專屬圖就用專屬圖
+  if (own) return own;
   return plans.find(p => p.variant === '標準層') || null;
 }
 let fillToken = 0;

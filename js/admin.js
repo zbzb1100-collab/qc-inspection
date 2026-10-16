@@ -252,14 +252,17 @@ function renderAdmin() {
 function planName(p) { return p; }
 async function uploadPlan(unit, variant, file) {
   const ext = (file.name.match(/\.(png|jpe?g|webp)$/i) || [, 'png'])[1].toLowerCase();
-  const path = `${unit.code}${variant === '2F' ? '-2F' : ''}_${Date.now()}.${ext}`;
+  const path = `${unit.code}${variant === '標準層' ? '' : '-' + variant}_${Date.now()}.${ext}`;
   const up = await sb.storage.from('plans').upload(path, file, { contentType: file.type || 'image/' + (ext === 'jpg' ? 'jpeg' : ext), upsert: true });
   if (up.error) throw up.error;
   const old = S.m.plans.find(p => p.unit_id === unit.id && p.variant === variant);
   if (old) {
     await q(sb.from('plans').update({ path }).eq('id', old.id));
     await sb.storage.from('plans').remove([old.path]);
-  } else await q(sb.from('plans').insert({ unit_id: unit.id, variant, path }));
+  } else {
+    const { error } = await sb.from('plans').insert({ unit_id: unit.id, variant, path });
+    if (error) { await sb.storage.from('plans').remove([path]); if (/check constraint|plans_variant/i.test(error.message)) throw new Error('要先到 Supabase 執行 4_樓層專屬圖.sql 一次，才能上傳各樓層專屬圖。'); throw error; }
+  }
 }
 function renderPlanAdmin(root) {
   const g = group('plan', '平面圖', '每戶一張，2F 另一張'); root.appendChild(g.d);
@@ -273,12 +276,12 @@ function renderPlanAdmin(root) {
     const files = [...bi.files]; bi.value = ''; log.innerHTML = ''; let okN = 0;
     const units = M.list('units', false);
     for (const f of files) {
-      const m = f.name.match(/^([A-Za-z]+\d+)(?:[-_ ]?(2F))?\.(png|jpe?g|webp)$/i);
+      const m = f.name.match(/^([A-Za-z]+\d+)(?:[-_ ]?(\d+F|B\d+F?|RF|PR|R\d+))?\.(png|jpe?g|webp)$/i);
       const row = el('div', 'r'); const lab = el('span', 'grow', f.name); const st = el('span', 'tag', '處理中…'); row.append(lab, st); log.appendChild(row);
       if (!m) { st.textContent = '檔名看不懂'; continue; }
       const hits = units.filter(u => u.code.toUpperCase() === m[1].toUpperCase());
       if (!hits.length) { st.textContent = `找不到戶別 ${m[1]}`; continue; }
-      try { await uploadPlan(hits[0], m[2] ? '2F' : '標準層', f); st.textContent = '完成' + (hits.length > 1 ? '（有多棟同名戶別，放在第一個）' : ''); st.classList.add('ok'); okN++; }
+      try { await uploadPlan(hits[0], m[2] ? m[2].toUpperCase() : '標準層', f); st.textContent = '完成' + (hits.length > 1 ? '（有多棟同名戶別，放在第一個）' : ''); st.classList.add('ok'); okN++; }
       catch (e) { st.textContent = '失敗：' + errMsg(e); }
     }
     await loadMaster(); toast(`成功 ${okN} / ${files.length} 張`); renderAdmin();
@@ -300,22 +303,29 @@ function renderPlanAdmin(root) {
     const marksBox = el('div', 'stack');
     const bld = M.get('buildings', unit.building_id);
     const fl = bld ? bld.floors : [];
-    const has2F = !bld || fl.includes('2F');
-    const others = fl.filter(f => f !== '2F');              // 2F 以外的樓層用「標準層」那張圖
-    const hasStd = !bld || others.length > 0;
-    ['標準層', '2F'].forEach(variant => {
-      if (variant === '2F' && !has2F) return;             // 這棟沒有 2F 就不顯示 2F 圖那列
-      if (variant === '標準層' && !hasStd) return;        // 這棟只有 2F 就不需要標準層
+    const addRow = (parent, variant, title) => {
       const p = S.m.plans.find(x => x.unit_id === unit.id && x.variant === variant);
       const r = el('div', 'r'); r.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:6px 0';
-      r.appendChild(el('b', null, `${unit.code} ${variant === '2F' ? '2F 圖' : (has2F ? `標準層圖（${others.length > 4 ? others[0] + '～' + others[others.length - 1] : (others.join('、') || '其他樓層')}）` : `平面圖（${fl.length > 4 ? fl[0] + '～' + fl[fl.length - 1] : (fl.join('、') || '全部樓層')}）`)}`));
+      r.appendChild(el('b', null, title));
       r.appendChild(el('span', 'tag' + (p ? ' ok' : ''), p ? '已上傳' : '未上傳'));
       const lab = el('label', 'btn ghost small', p ? '更換圖' : '上傳圖'); const fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.style.display = 'none'; lab.appendChild(fi);
       fi.onchange = () => guard(lab, async () => { const f = fi.files[0]; if (!f) return; await uploadPlan(unit, variant, f); await reloadAdmin(); toast('已上傳'); });
       r.appendChild(lab);
       if (p) { const mb = el('button', 'btn ghost small', '標記空間位置'); mb.onclick = () => { adminSel.markPlan = p.id; renderAdmin(); }; r.appendChild(mb); }
-      g.body.appendChild(r);
-    });
+      parent.appendChild(r);
+    };
+    const range = a => a.length > 4 ? a[0] + '～' + a[a.length - 1] : a.join('、');
+    addRow(g.body, '標準層', `${unit.code} 共用圖（沒有專屬圖的樓層用這張${fl.length ? '：' + range(fl) : ''}）`);
+    // 各樓層格局不同時，可以替那一層另外上傳專屬圖；填寫時優先用專屬圖
+    const has2F = fl.includes('2F');
+    if (has2F) addRow(g.body, '2F', `${unit.code} 2F 專屬圖`);
+    const rest = fl.filter(f => f !== '2F');
+    if (rest.length) {
+      const dt = el('details'); const nUp = rest.filter(f => S.m.plans.some(x => x.unit_id === unit.id && x.variant === f)).length;
+      dt.open = adminSel.floorPlansOpen === unit.id; dt.addEventListener('toggle', () => { adminSel.floorPlansOpen = dt.open ? unit.id : null; });
+      const sm = el('summary', 'hint', `其他樓層專屬圖（選填，已傳 ${nUp} 張）`); sm.style.cursor = 'pointer'; dt.appendChild(sm);
+      rest.forEach(f => addRow(dt, f, `${unit.code} ${f} 專屬圖`)); g.body.appendChild(dt);
+    }
     g.body.appendChild(marksBox);
     const mp = S.m.plans.find(p => p.id === adminSel.markPlan && p.unit_id === unit.id);
     if (mp) renderMarkEditor(marksBox, mp);
