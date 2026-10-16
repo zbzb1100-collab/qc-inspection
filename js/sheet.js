@@ -24,7 +24,7 @@ async function openDefect(row, c) {
 function lastCustomer(unitId) { try { return sessionStorage.getItem('qc-cust-' + unitId) || ''; } catch (e) { return ''; } }
 function closeSheet() {
   [...cur.before, ...cur.after].forEach(p => p.blob && URL.revokeObjectURL(p.url));
-  $('sheet').hidden = true; cur = null;
+  $('sheet').hidden = true; cur = null; $('sh-mini').querySelectorAll('.pin').forEach(p => p.remove());
 }
 
 function paintSheet() {
