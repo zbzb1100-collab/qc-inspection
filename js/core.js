@@ -166,3 +166,31 @@ $('viewer').onclick = () => { $('viewer').hidden = true; };
 
 const STATUS = { todo: '待修', fixed: '已修繕', signing: '待簽認', closed: '結案' };
 const needSign = typeId => !!(M.get('inspect_types', typeId) || {}).need_sign;   // 這個檢查類型複驗後要客戶簽認
+
+// 簽名板：回傳簽名 JPEG（白底黑字），取消回傳 null
+function openSignPad(title) {
+  const ov = $('signpad'), cv = $('sp-canvas');
+  $('sp-title').textContent = title || '請客戶在框內簽名';
+  ov.hidden = false;
+  const r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  const g = cv.getContext('2d');
+  const clear = () => { g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); inked = 0; };
+  let inked = 0, last = null; clear();
+  g.strokeStyle = '#111'; g.lineWidth = 2.6 * dpr; g.lineCap = 'round'; g.lineJoin = 'round';
+  const pt = e => { const b = cv.getBoundingClientRect(); return [(e.clientX - b.left) * dpr, (e.clientY - b.top) * dpr]; };
+  cv.onpointerdown = e => { e.preventDefault(); cv.setPointerCapture(e.pointerId); last = pt(e); g.beginPath(); g.arc(last[0], last[1], g.lineWidth / 2, 0, 7); g.fillStyle = '#111'; g.fill(); inked++; };
+  cv.onpointermove = e => { if (!last) return; const p = pt(e); g.beginPath(); g.moveTo(...last); g.lineTo(...p); g.stroke(); inked += Math.hypot(p[0] - last[0], p[1] - last[1]); last = p; };
+  cv.onpointerup = cv.onpointercancel = () => { last = null; };
+  return new Promise(res => {
+    const end = v => { ov.hidden = true; cv.onpointerdown = cv.onpointermove = cv.onpointerup = cv.onpointercancel = null; res(v); };
+    $('sp-clear').onclick = clear;
+    $('sp-cancel').onclick = () => end(null);
+    $('sp-ok').onclick = () => {
+      if (inked < 30 * dpr) { toast('請先簽名'); return; }
+      const w = Math.min(cv.width, 1000), h = Math.round(cv.height * w / cv.width);   // 存檔不超過 1000px 寬
+      const o = document.createElement('canvas'); o.width = w; o.height = h; o.getContext('2d').drawImage(cv, 0, 0, w, h);
+      o.toBlob(b => end(b), 'image/jpeg', 0.85);
+    };
+  });
+}

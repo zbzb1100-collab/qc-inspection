@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610161004">
+<link rel="stylesheet" href="css/app.css?v=202610161011">
 </head>
 <body>
 
@@ -130,11 +130,12 @@
       <button class="btn block" id="sh-pass">② 複驗合格，結案</button>
       <div id="sh-sign" class="stack" hidden>
         <div class="row">
-          <div style="flex:1;min-width:140px"><label class="f">簽認人</label><input type="text" id="sh-signname" placeholder="客戶或管委會姓名"></div>
+          <div style="flex:1;min-width:140px"><label class="f">簽認人（選填）</label><input type="text" id="sh-signname" placeholder="客戶或管委會姓名"></div>
           <div style="flex:1;min-width:140px"><label class="f">簽認日期</label><input type="date" id="sh-signdate"></div>
         </div>
-        <button class="btn block" id="sh-signgo">③ 客戶簽認，結案</button>
+        <button class="btn block" id="sh-signgo">③ 客戶簽名，結案</button>
       </div>
+      <div id="sh-signwrap" hidden><label class="f">客戶簽名</label><div class="photos signs" id="sh-signimg"></div></div>
       <button class="btn ghost block" id="sh-reopen">複驗不合格／重新開啟，退回待修</button>
       <button class="btn ghost block" id="sh-nofix">不修，直接結案</button>
       <textarea id="sh-reason" placeholder="不修原因（必填）" hidden></textarea>
@@ -152,18 +153,30 @@
 
 <div id="print-root" aria-hidden="true"></div>
 <div class="overlay" id="viewer" hidden><img id="viewer-img" alt="照片"></div>
+<div class="overlay" id="signpad" hidden>
+  <div class="signbox stack">
+    <b id="sp-title">請客戶在框內簽名</b>
+    <canvas id="sp-canvas"></canvas>
+    <div class="hint" id="sp-hint">用手指簽名；簽錯按「清除」重簽。</div>
+    <div class="row">
+      <button class="btn ghost" id="sp-clear" type="button">清除</button>
+      <button class="btn ghost" id="sp-cancel" type="button">取消</button>
+      <button class="btn" id="sp-ok" type="button" style="flex:1">確認簽名</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610161004"></script>
-<script src="js/core.js?v=202610161004"></script>
-<script src="js/pick.js?v=202610161004"></script>
-<script src="js/sheet.js?v=202610161004"></script>
-<script src="js/report.js?v=202610161004"></script>
-<script src="js/admin.js?v=202610161004"></script>
-<script src="js/admin_excel.js?v=202610161004"></script>
-<script src="js/admin_import.js?v=202610161004"></script>
-<script src="js/main.js?v=202610161004"></script>
+<script src="config.js?v=202610161011"></script>
+<script src="js/core.js?v=202610161011"></script>
+<script src="js/pick.js?v=202610161011"></script>
+<script src="js/sheet.js?v=202610161011"></script>
+<script src="js/report.js?v=202610161011"></script>
+<script src="js/admin.js?v=202610161011"></script>
+<script src="js/admin_excel.js?v=202610161011"></script>
+<script src="js/admin_import.js?v=202610161011"></script>
+<script src="js/main.js?v=202610161011"></script>
 </body>
 </html>

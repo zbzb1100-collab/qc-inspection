@@ -75,7 +75,7 @@ async function photoCounts(ids) {
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await sb.from('defect_photos').select('defect_id,kind').in('defect_id', ids.slice(i, i + 200)).limit(5000);
     if (error) throw error;
-    data.forEach(p => { const c = cnt[p.defect_id] || (cnt[p.defect_id] = { before: 0, after: 0 }); c[p.kind]++; });
+    data.forEach(p => { const c = cnt[p.defect_id] || (cnt[p.defect_id] = { before: 0, after: 0, sign: 0 }); c[p.kind]++; });
   }
   return cnt;
 }

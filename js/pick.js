@@ -136,14 +136,15 @@ function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清�
   box.hidden = !rows.length || isVendor(); if (box.hidden) return;
   box.appendChild(el('b', null, `本戶有 ${rows.length} 筆待簽認`));
   const r = el('div', 'row');
-  const nm = el('input'); nm.type = 'text'; nm.placeholder = '簽認人（客戶或管委會）'; nm.style.flex = '1'; nm.style.minWidth = '140px';
+  const nm = el('input'); nm.type = 'text'; nm.placeholder = '簽認人（選填）'; nm.style.flex = '1'; nm.style.minWidth = '140px';
   const dt = el('input'); dt.type = 'date'; dt.value = today(); dt.style.flex = '1'; dt.style.minWidth = '140px';
   r.append(nm, dt); box.appendChild(r);
-  const go = el('button', 'btn block', `整戶簽認，${rows.length} 筆一起結案`); box.appendChild(go);
+  const go = el('button', 'btn block', `整戶簽名，${rows.length} 筆一起結案`); box.appendChild(go);
   go.onclick = () => guard(go, async () => {
-    const name = nm.value.trim(); if (!name) throw new Error('請填簽認人');
-    let n = 0;
+    const blob = await openSignPad(`請客戶簽名（本戶 ${rows.length} 筆一起結案）`); if (!blob) return;
+    const name = nm.value.trim() || null; let n = 0;
     for (const d of rows) {
+      await uploadPhoto(d.id, 'sign', blob).catch(e => { throw new Error(errMsg(e) + `（已完成 ${n} 筆）`); });
       const { data, error } = await sb.from('defects').update({ status: 'closed', close_type: '複驗合格', close_reason: null, signed_name: name, signed_date: dt.value || today() })
         .eq('id', d.id).eq('status', 'signing').select('id');
       if (error) throw new Error(errMsg(error) + `（已完成 ${n} 筆）`);

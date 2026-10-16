@@ -212,3 +212,8 @@ th{font-family:var(--mono);letter-spacing:.06em}
 .item .no.signing{background:var(--sign)}
 .item:has(.no.signing)::before{background:var(--sign);box-shadow:0 0 10px var(--sign)}
 .status.signing{background:color-mix(in srgb,var(--sign) 18%,transparent);color:var(--sign)}
+
+/* 簽名板 */
+.signbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;width:100%;max-width:720px}
+#sp-canvas{display:block;width:100%;height:min(46vh,300px);background:#fff;border-radius:8px;touch-action:none;cursor:crosshair}
+.photos.signs img{width:auto;max-width:100%;height:96px;object-fit:contain;background:#fff}

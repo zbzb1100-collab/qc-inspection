@@ -9,7 +9,7 @@ async function openDefect(row, c) {
     planned_date: today(10), fixed_date: null, description: '', customer_name: lastCustomer(ctx.create.unit_id)
   };
   cur = base;
-  cur.before = []; cur.after = []; cur.removed = [];
+  cur.before = []; cur.after = []; cur.sign = []; cur.removed = [];
   cur.respTouched = !!row && row.resp_vendor_id !== row.fix_vendor_id;
   $('sheet').hidden = false; $('sheet').querySelector('.panel').scrollTop = 0;
   paintSheet();
@@ -17,7 +17,7 @@ async function openDefect(row, c) {
     const { data, error } = await sb.from('defect_photos').select('*').eq('defect_id', row.id).order('id');
     if (error) { toast(errMsg(error)); return; }
     const urls = await signedUrls('photos', data.map(p => p.path));
-    data.forEach((p, i) => (p.kind === 'after' ? cur.after : cur.before).push({ id: p.id, path: p.path, url: urls[i], by: p.created_by }));
+    data.forEach((p, i) => (p.kind === 'after' ? cur.after : p.kind === 'sign' ? cur.sign : cur.before).push({ id: p.id, path: p.path, url: urls[i], by: p.created_by }));
     paintPhotos();
   }
 }
@@ -60,7 +60,7 @@ function paintSheet() {
   $('sh-fixdate-wrap').hidden = st2 === 'closed' || st2 === 'signing';
   $('sh-closeinfo').textContent = st2 === 'closed'
     ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}${cur.signed_name ? `　簽認：${cur.signed_name} ${cur.signed_date || ''}` : ''}`
-    : st2 === 'signing' ? '複驗合格，等客戶簽認。客戶簽好後填簽認人，按③結案；客戶不認可按「退回待修」。'
+    : st2 === 'signing' ? '複驗合格，等客戶簽認。請客戶確認後按③，在簽名板簽名就結案；客戶不認可按「退回待修」。'
     : (st2 === 'fixed' ? `廠商已修繕，等複驗。複驗合格就按②${sign ? '（之後還要客戶簽認）' : '結案'}；不合格按「退回待修」。` : '修好後拍「修繕後照片」，再按①。');
   $('sh-del').hidden = isNew || !isAdmin(); $('sh-del').textContent = '刪除';
   $('sh-trail').textContent = isNew ? '' :
@@ -127,6 +127,12 @@ $('sh-vendor').onchange = e => { cur.resp_vendor_id = e.target.value ? Number(e.
 function paintPhotos() {
   photoBox($('sh-photos'), cur.before, 'before');
   photoBox($('sh-afterphotos'), cur.after, 'after');
+  paintSigns();
+}
+function paintSigns() {   // 簽名圖只看不刪（簽認的證據）
+  const box = $('sh-signimg'); box.innerHTML = '';
+  $('sh-signwrap').hidden = !cur.sign.length;
+  cur.sign.forEach(p => { const im = el('img'); im.src = p.url; im.alt = '客戶簽名'; im.onclick = () => showViewer(p.url); box.appendChild(im); });
 }
 function photoBox(box, arr, kind) {
   box.innerHTML = '';
@@ -231,9 +237,10 @@ $('sh-pass').onclick = e => guard(e.currentTarget, async () => {
   done('複驗合格，已結案');
 });
 $('sh-signgo').onclick = e => guard(e.currentTarget, async () => {
-  const name = $('sh-signname').value.trim(); if (!name) throw new Error('請填簽認人');
+  const blob = await openSignPad(); if (!blob) return;
   await persist();
-  await setStatus({ status: 'closed', close_type: '複驗合格', close_reason: null, signed_name: name, signed_date: $('sh-signdate').value || today() });
+  await uploadPhoto(cur.id, 'sign', blob);
+  await setStatus({ status: 'closed', close_type: '複驗合格', close_reason: null, signed_name: $('sh-signname').value.trim() || null, signed_date: $('sh-signdate').value || today() });
   done('客戶已簽認，結案');
 });
 $('sh-reopen').onclick = e => guard(e.currentTarget, async () => {
@@ -255,7 +262,7 @@ $('sh-del').onclick = e => {
   const b = e.currentTarget;
   if (!b.dataset.arm) { b.dataset.arm = '1'; b.textContent = '再按一次確認刪除'; setTimeout(() => { delete b.dataset.arm; b.textContent = '刪除'; }, 4000); return; }
   guard(b, async () => {
-    const paths = [...cur.before, ...cur.after].filter(p => p.path).map(p => p.path);
+    const paths = [...cur.before, ...cur.after, ...cur.sign].filter(p => p.path).map(p => p.path);
     const { error } = await sb.from('defects').delete().eq('id', cur.id);
     if (error) throw error;
     await removeFiles('photos', paths);
