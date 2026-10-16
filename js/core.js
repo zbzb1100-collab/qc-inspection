@@ -29,6 +29,9 @@ async function loadMaster() {
     if (r.error) throw new Error(MASTER_TABLES[i] + '：' + r.error.message);
     S.m[MASTER_TABLES[i]] = r.data || [];
   });
+  // 每戶空間別（新增的表；還沒建表時不要讓整個系統壞掉）
+  const us = await sb.from('unit_spaces').select('*');
+  S.m.unit_spaces = us.error ? [] : (us.data || []); S.noUnitSpaces = !!us.error;
 }
 const bySort = (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || String(a.name ?? a.code ?? '').localeCompare(String(b.name ?? b.code ?? ''), 'zh-Hant', { numeric: true });
 const act = rows => rows.filter(r => r.active !== false);
@@ -41,10 +44,11 @@ const M = {
   itemsOf: cid => M.list('items').filter(i => i.category_id === cid),
   vendorsOfCat: cid => S.m.category_vendors.filter(cv => cv.category_id === cid).sort((a, b) => a.sort - b.sort)
     .map(cv => M.get('vendors', cv.vendor_id)).filter(v => v && v.active !== false),
-  // 空間別是一份總清單；這戶的平面圖上標過哪些空間，填寫時就只出現那些（＋全室）。這戶還沒標就全部顯示。
+  // 空間別是一份總清單；每戶設定了哪些空間，填寫時就只出現那些（＋全室）。這戶沒設定時，改看平面圖標記；都沒有就全部顯示。
   spacesFor: (unitId, floor, keepId) => {
     const all = M.list('spaces'); const plan = typeof pickPlan === 'function' ? pickPlan(unitId, floor) : null;
-    const ids = new Set(plan ? S.m.plan_spaces.filter(m => m.plan_id === plan.id).map(m => m.space_id) : []);
+    let ids = new Set(S.m.unit_spaces.filter(m => m.unit_id === unitId).map(m => m.space_id));
+    if (!ids.size) ids = new Set(plan ? S.m.plan_spaces.filter(m => m.plan_id === plan.id).map(m => m.space_id) : []);
     if (!ids.size) return all;
     return all.filter(sp => ids.has(sp.id) || sp.name === '全室' || sp.id === keepId);
   },

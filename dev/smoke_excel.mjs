@@ -124,5 +124,19 @@ const d2r = db3.defects.find(d => d.id === 2);
 ok(d2r.fix_vendor_id === 1 && d2r.resp_vendor_id === 1, '合併：舊紀錄的修繕/責任廠商改掛到保留的廠商');
 ok(!db3.vendors.some(v => v.name === '捷挺裝潢'), '合併：被併掉的廠商已移除');
 ok(db3.category_vendors.some(m => m.category_id === 2 && m.vendor_id === 1), '合併：工項預設廠商對應一併轉移');
+
+// ---- 每戶空間別 ----
+await page.evaluate(async () => { const T = window.__db.T; T.units.forEach(u => { u.active = true; }); if (!T.units.some(u => u.code === 'A2')) T.units.push({ id: 99, building_id: 1, code: 'A2', sort: 2, active: true }); await reloadAdmin(); });
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.trim() === '戶別') d.open = true; }));
+const ud = page.locator('#admin-root details:has(> summary:text-is("戶別"))');
+await ud.locator('button.chip:text-is("A1")').click();
+await ud.locator('button.chip:has-text("前陽台")').click(); await page.waitForTimeout(300);
+await ud.locator('button.chip:has-text("客餐廳")').click(); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.unit_spaces.map(m => m.unit_id + ':' + m.space_id).sort().join())) === '1:2,1:3', '點選空間＝這戶有此空間');
+ok((await page.evaluate(() => M.spacesFor(1, '3F').map(s => s.name).join())) === '全室,客餐廳,前陽台', '填寫只出現這戶的空間（含全室）');
+ok((await page.evaluate(() => M.spacesFor(99, '3F').length)) === await page.evaluate(() => M.list('spaces').length), '沒設定的戶顯示全部空間');
+await ud.locator('select').first().selectOption({ label: 'A1（2 個空間）' }).catch(() => {});
+await ud.locator('button:has-text("套用到同棟全部戶別")').click(); await ud.locator('button:has-text("確定覆蓋")').click(); await page.waitForTimeout(400);
+ok((await page.evaluate(() => window.__db.T.unit_spaces.filter(m => m.unit_id === 99).length)) === 2, '套用到同棟全部戶別');
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);

@@ -5,6 +5,40 @@ const adminShowOff = new Set();      // 哪些清單目前展開顯示「已停�
 const splitNames = s => s.split(/[,，、\n]+/).map(x => x.trim()).filter(Boolean);
 const nextSort = rows => rows.reduce((m, r) => Math.max(m, r.sort ?? 0), 0) + 1;
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+async function setUnitSpaces(unitIds, spaceIds) {      // 把這些戶的空間別整組換成 spaceIds
+  await q(sb.from('unit_spaces').delete().in('unit_id', unitIds));
+  const rows = []; unitIds.forEach(u => spaceIds.forEach(sp => rows.push({ unit_id: u, space_id: sp })));
+  for (let i = 0; i < rows.length; i += 500) await q(sb.from('unit_spaces').insert(rows.slice(i, i + 500)));
+}
+function unitSpacesEditor(body, u) {
+  const box = el('div', 'stack'); body.appendChild(box);
+  if (S.noUnitSpaces) { box.appendChild(el('div', 'banner', '還沒建立「每戶空間別」資料表：請到 Supabase SQL Editor 執行 3_戶別空間.sql 一次，這裡才能使用。')); return; }
+  const mine = () => S.m.unit_spaces.filter(m => m.unit_id === u.id).map(m => m.space_id);
+  box.appendChild(el('label', 'f', `${u.code} 有哪些空間（點選＝有；全部不選＝填寫時顯示全部）`));
+  const cs = el('div', 'chips'); box.appendChild(cs);
+  const have = new Set(mine());
+  M.list('spaces').filter(sp => sp.name !== '全室').forEach(sp => {
+    const b = el('button', 'chip' + (have.has(sp.id) ? ' on' : ''), (sp.code && sp.code !== '0' ? sp.code + ' ' : '') + sp.name); b.type = 'button';
+    b.onclick = () => guard(b, async () => {
+      if (have.has(sp.id)) await q(sb.from('unit_spaces').delete().eq('unit_id', u.id).eq('space_id', sp.id));
+      else await q(sb.from('unit_spaces').insert({ unit_id: u.id, space_id: sp.id }));
+      await reloadAdmin();
+    });
+    cs.appendChild(b);
+  });
+  const sibs = S.m.units.filter(x => x.building_id === u.building_id && x.id !== u.id).sort(bySort);
+  const row = el('div', 'inline-add'); const sel = el('select'); fillSelect(sel, sibs, null, '複製其他戶的空間設定…', x => `${x.code}（${S.m.unit_spaces.filter(m => m.unit_id === x.id).length} 個空間）`);
+  const cp = el('button', 'btn ghost small', '複製到這戶'); cp.onclick = () => guard(cp, async () => {
+    if (!sel.value) throw new Error('先選要複製哪一戶');
+    await setUnitSpaces([u.id], S.m.unit_spaces.filter(m => m.unit_id === Number(sel.value)).map(m => m.space_id)); await reloadAdmin(); toast('已複製');
+  });
+  row.append(sel, cp); box.appendChild(row);
+  const all = el('button', 'btn ghost small', '把這戶的設定套用到同棟全部戶別'); all.onclick = () => {
+    if (!all.dataset.arm) { all.dataset.arm = '1'; all.textContent = `確定覆蓋同棟其他 ${sibs.length} 戶？`; setTimeout(() => { delete all.dataset.arm; all.textContent = '把這戶的設定套用到同棟全部戶別'; }, 5000); return; }
+    guard(all, async () => { await setUnitSpaces(sibs.map(x => x.id).concat(u.id), mine()); await reloadAdmin(); toast('已套用到同棟全部戶別'); });
+  };
+  box.appendChild(all);
+}
 async function reloadAdmin() { await loadMaster(); renderAdmin(); }
 
 // 通用清單編輯器：點選 → 改名／排序／停用／刪除
@@ -138,13 +172,14 @@ function renderAdmin() {
     const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
     g.body.appendChild(sel);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
+    chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
       onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i })))),
-      placeholder: '新增戶別，例：A9' }); }
+      placeholder: '新增戶別，例：A9' });
+    const su = S.m.units.find(x => x.id === adminSel.unit); if (su) unitSpacesEditor(g.body, su); }
 
-  // 3 空間別（總清單；每戶有哪些空間，在「平面圖 → 標記空間位置」決定）
+  // 3 空間別（總清單；每戶有哪些空間，在「戶別」設定）
   { const g = group('space', '空間別', '所有可用空間的總清單'); root.appendChild(g.d);
-    g.body.appendChild(el('p', 'hint', '這裡是所有可用的空間。每一戶實際會出現哪些空間，由該戶平面圖上標記的空間決定（管理 → 平面圖 → 標記空間位置）；還沒標的戶會先顯示全部。'));
+    g.body.appendChild(el('p', 'hint', '這裡是所有可用的空間。每一戶有哪些空間，到上面「戶別」點選那一戶來勾選；還沒設定的戶會先顯示全部。'));
     const rows = S.m.spaces.slice().sort(bySort);
     const typeId = (rows[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;
     const box = el('div', 'stack'); g.body.appendChild(box);
@@ -278,7 +313,7 @@ function renderPlanAdmin(root) {
   }
 }
 async function renderMarkEditor(box, plan) {
-  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置＝這戶有這個空間（填缺失時只會出現標過的空間；有圖面代號顯示代號，沒有顯示名稱）'));
+  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置，在圖上放該空間的標記（有圖面代號顯示代號，沒有顯示名稱）。這戶有哪些空間，請到「戶別」設定'));
   const spaces = M.list('spaces').filter(s => s.name !== '全室');
   const chipsBox = el('div', 'chips'); box.appendChild(chipsBox);
   const wrap = el('div', 'plan'); const img = el('img'); img.alt = '平面圖'; wrap.appendChild(img); box.appendChild(wrap);

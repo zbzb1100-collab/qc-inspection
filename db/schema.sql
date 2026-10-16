@@ -94,6 +94,11 @@ create table if not exists public.plan_spaces (            -- 平面圖上的空
   x numeric not null, y numeric not null,
   unique (plan_id, space_id)
 );
+create table if not exists public.unit_spaces (           -- 每戶有哪些空間別
+  unit_id bigint not null references public.units(id) on delete cascade,
+  space_id bigint not null references public.spaces(id) on delete cascade,
+  primary key (unit_id, space_id)
+);
 create table if not exists public.categories (             -- 大分類（工項）
   id bigint generated always as identity primary key,
   name text not null unique,
@@ -197,7 +202,7 @@ do $$
 declare t text;
 begin
   -- 清單類：登入者可看，只有管理者可改
-  foreach t in array array['sites','inspect_types','buildings','units','plans','spaces','plan_spaces',
+  foreach t in array array['sites','inspect_types','buildings','units','plans','spaces','plan_spaces','unit_spaces',
                            'categories','items','vendors','category_vendors','repair_methods'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists %I on public.%I', t||'_read', t);
