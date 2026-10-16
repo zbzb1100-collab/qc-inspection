@@ -69,6 +69,7 @@ function renderAdmin() {
   const root = $('admin-root'); root.innerHTML = '';
   root.appendChild(el('div', 'banner', '清單都在這裡自己改，不用找廠商。新增或停用後，填寫頁馬上跟著變。'));
   const siteId = S.sel.siteId;
+  renderExcelAdmin(root);
 
   // 1 棟別與樓層
   { const g = group('bld', '棟別與樓層'); root.appendChild(g.d);

@@ -1,6 +1,6 @@
 import { createRequire } from 'module';
 import fs from 'fs';
-const require = createRequire('/node-tools/node_modules/');
+const require = createRequire('/opt/node22/lib/node_modules/');
 const { chromium } = require('playwright');
 const root = new URL('..', import.meta.url).pathname;
 const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');

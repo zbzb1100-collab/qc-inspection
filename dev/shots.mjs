@@ -1,5 +1,5 @@
 import { createRequire } from 'module'; import fs from 'fs';
-const require = createRequire('/node-tools/node_modules/'); const { chromium } = require('playwright');
+const require = createRequire('/opt/node22/lib/node_modules/'); const { chromium } = require('playwright');
 const root = new URL('..', import.meta.url).pathname; const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] });
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 }); const page = await ctx.newPage();

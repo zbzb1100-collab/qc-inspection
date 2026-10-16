@@ -9,3 +9,6 @@
 ## 開發
 
 `dev/` 是測試用：`node dev/smoke.mjs` 以模擬資料庫在無頭瀏覽器跑整套流程（需 Playwright）。正式網頁不會載入 `dev/`。
+
+## Excel 批次設定
+管理 → 「Excel 批次設定」：匯出目前設定／下載空白範本／選檔匯入（只新增與修改，不刪除）。測試：`node dev/smoke_excel.mjs`（需 `npm i xlsx@0.18.5` 於 /tmp/claude-0/xl）。
