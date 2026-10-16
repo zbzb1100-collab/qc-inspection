@@ -83,5 +83,31 @@ const before = JSON.stringify(await page.evaluate(() => window.__db.T.units.leng
 const [d2] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("下載空白範本")').click()]);
 await d2.saveAs('/tmp/claude-0/xl/tpl.xlsx'); const t = XLSX.readFile('/tmp/claude-0/xl/tpl.xlsx');
 ok(XLSX.utils.sheet_to_json(t.Sheets['戶別'], { header: 1 })[0].join() === '棟別,戶別,排序,狀態', '空白範本有欄位名稱');
+
+// ---- 完整同步 ----
+await page.evaluate(() => { const T = window.__db.T; T.defects.push({ id: 1, site_id: 1, inspect_type_id: 1, building_id: 1, floor: '3F', unit_id: 1, category_id: 1, item_id: 1, status: 'todo' }); });
+await page.click('#t-pick'); await page.click('#t-admin'); await page.waitForSelector('#xl-file');
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('Excel')) d.open = true; }));
+const [d3] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("匯出目前設定")').click()]);
+await d3.saveAs('/tmp/claude-0/xl/exp2.xlsx');
+const w3 = XLSX.readFile('/tmp/claude-0/xl/exp2.xlsx');
+const drop = (name, pred) => { const rows = XLSX.utils.sheet_to_json(w3.Sheets[name], { header: 1 }); w3.Sheets[name] = XLSX.utils.aoa_to_sheet(rows.filter((r, i) => i === 0 || !pred(r))); };
+drop('戶別', r => ['A1', 'A2', 'G1'].includes(r[1]));        // A1 有缺失紀錄 → 停用；A2、G1 沒用過 → 刪除
+drop('缺失內容', r => r[1] === '踢腳板鬆脫' || r[1] === '有漏水或滲水情況'); // 後者有紀錄 → 停用
+XLSX.writeFile(w3, '/tmp/claude-0/xl/sync.xlsx');
+await page.locator('#xl-file').setInputFiles('/tmp/claude-0/xl/sync.xlsx'); await page.waitForTimeout(300);
+ok((await page.textContent('#xl-out')).includes('新增 0'), '未勾完整同步時不動資料（只預覽新增/修改）');
+await page.locator('#xl-sync').check(); await page.waitForTimeout(400);
+const pv = await page.textContent('#xl-out');
+ok(pv.includes('A棟 A1（停用）') && pv.includes('A棟 A2（刪除）'), '預覽：有紀錄的戶別標停用、沒用過的標刪除');
+const [bk] = await Promise.all([page.waitForEvent('download'), page.click('#xl-go')]);
+ok(!!bk, '同步前自動下載備份');
+await page.waitForTimeout(800);
+const db2 = await page.evaluate(() => window.__db.T);
+ok(!db2.units.some(u => u.code === 'A2' || u.code === 'G1'), '沒用過的戶別已刪除');
+const a1 = db2.units.find(u => u.code === 'A1'); ok(a1 && a1.active === false, '有缺失紀錄的戶別改為停用');
+ok(!db2.items.some(i => i.name === '踢腳板鬆脫') && db2.items.find(i => i.name === '有漏水或滲水情況').active === false, '缺失內容：沒用過刪除、用過停用');
+ok(db2.units.some(u => u.code === 'S1' && u.active !== false), '檔案裡仍有的項目不受影響');
+ok(db2.defects.length === 1, '缺失紀錄完全保留');
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);

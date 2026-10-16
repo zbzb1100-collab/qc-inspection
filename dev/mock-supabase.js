@@ -55,7 +55,9 @@
             if (st.payload.status === 'closed') { r.closed_by = me; r.closed_at = r.updated_at; } }
         });
       } else if (st.op === 'delete') {
-        out = rows.filter(match); T[table] = rows.filter(r => !match(r));
+        out = rows.filter(match);
+        const refs = { units: [['defects', 'unit_id']], buildings: [['defects', 'building_id'], ['units', 'building_id']], spaces: [['defects', 'space_id']], categories: [['defects', 'category_id'], ['items', 'category_id']], items: [['defects', 'item_id']], vendors: [['defects', 'fix_vendor_id'], ['defects', 'resp_vendor_id']], repair_methods: [['defects', 'repair_method_id']], inspect_types: [['defects', 'inspect_type_id'], ['spaces', 'inspect_type_id']] }[table] || [];
+        if (out.some(r => refs.some(([t, c]) => (T[t] || []).some(x => x[c] === r.id)))) return { data: null, error: { code: '23503', message: 'violates foreign key constraint' } }; T[table] = rows.filter(r => !match(r));
         if (table === 'defects') T.defect_photos = T.defect_photos.filter(p => !out.some(d => d.id === p.defect_id));
       } else {
         out = rows.filter(match).slice();

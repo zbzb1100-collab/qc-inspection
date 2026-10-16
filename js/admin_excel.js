@@ -9,6 +9,17 @@ const XL_SHEETS = {
   method: ['修繕方式', ['修繕方式', '排序', '狀態']],
   itype: ['檢查類型', ['檢查類型', '排序', '狀態']],
 };
+let xlSync = false;                 // 「完整同步」：Excel 沒列出的項目也處理
+let XL_USE = null;                  // 已被缺失紀錄用過的項目
+async function xlLoadUsage() {
+  const rows = await fetchAll(() => sb.from('defects').select('id,inspect_type_id,building_id,unit_id,space_id,category_id,item_id,repair_method_id,fix_vendor_id,resp_vendor_id').order('id'));
+  const u = { itype: new Set(), bld: new Set(), unit: new Set(), space: new Set(), cat: new Set(), item: new Set(), method: new Set(), vendor: new Set() };
+  rows.forEach(d => {
+    u.itype.add(d.inspect_type_id); u.bld.add(d.building_id); u.unit.add(d.unit_id); u.space.add(d.space_id); u.cat.add(d.category_id);
+    u.item.add(d.item_id); u.method.add(d.repair_method_id); u.vendor.add(d.fix_vendor_id); u.vendor.add(d.resp_vendor_id);
+  });
+  XL_USE = u;
+}
 const xlState = a => a ? '啟用' : '停用';
 
 function xlHelpRows() {
@@ -103,6 +114,12 @@ function xlStage(label, table, rows, o) {
       }
     } catch (e) { res.warns.push(where + '：' + e.message); }
   });
+  res.removes = [];
+  if (xlSync && o.scope && (rows || []).length) {
+    if (res.warns.length) res.skipSync = true;       // 這張表有問題列，為安全起見這次不處理刪除
+    else res.removes = o.scope().filter(x => !seen.has(x.k)).map(x => ({ match: { id: x.ex.id }, nm: x.nm, used: o.used(x.ex), off: x.ex.active === false }))
+      .filter(x => !(x.used && x.off));
+  }
   return res;
 }
 
@@ -118,45 +135,45 @@ function xlCompute(stage, data, pend) {
   const rowsOf = k => data[k] ? data[k].rows : [];
 
   switch (stage) {
-    case 'itype': return xlStage('檢查類型', 'inspect_types', rowsOf('itype'), { row: r => {
+    case 'itype': return xlStage('檢查類型', 'inspect_types', rowsOf('itype'), { scope: () => S.m.inspect_types.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.itype.has(e.id), row: r => {
       const n = need(r, '檢查類型'), ex = S.m.inspect_types.find(t => t.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       return { k: n, nm: n, ex, base: { sort: ns('it', S.m.inspect_types), active: true }, want: { name: n, sort: s, active: a } };
     } });
-    case 'method': return xlStage('修繕方式', 'repair_methods', rowsOf('method'), { row: r => {
+    case 'method': return xlStage('修繕方式', 'repair_methods', rowsOf('method'), { scope: () => S.m.repair_methods.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.method.has(e.id), row: r => {
       const n = need(r, '修繕方式'), ex = S.m.repair_methods.find(t => t.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       return { k: n, nm: n, ex, base: { sort: ns('rm', S.m.repair_methods), active: true }, want: { name: n, sort: s, active: a } };
     } });
     case 'vendor': {
       const rows = rowsOf('vendor').slice(); const have = new Set(rows.map(r => r['廠商']));
       rowsOf('cat').forEach(c => splitNames(c['預設廠商'] || '').forEach(v => { if (!have.has(v)) { have.add(v); rows.push({ 廠商: v, 狀態: '' }); } }));
-      return xlStage('廠商', 'vendors', rows, { row: r => {
+      return xlStage('廠商', 'vendors', rows, { scope: () => S.m.vendors.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.vendor.has(e.id), row: r => {
         const n = need(r, '廠商'), ex = S.m.vendors.find(t => t.name === n), a = xlActive(r['狀態']);
         return { k: n, nm: n, ex, base: { active: true }, want: { name: n, active: a } };
       } });
     }
-    case 'bld': return xlStage('棟別樓層', 'buildings', rowsOf('bld'), { row: r => {
+    case 'bld': return xlStage('棟別樓層', 'buildings', rowsOf('bld'), { scope: () => bldRows().map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.bld.has(e.id), row: r => {
       const n = need(r, '棟別'), ex = bldRows().find(b => b.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const fl = r['樓層'] === '' ? undefined : splitNames(r['樓層'].replace(/\s+/g, '、'));
       return { k: n, nm: n, ex, base: { site_id: siteId, floors: [], sort: ns('b', bldRows()), active: true }, want: { name: n, floors: fl, sort: s, active: a } };
     } });
-    case 'unit': return xlStage('戶別', 'units', rowsOf('unit'), { row: r => {
+    case 'unit': return xlStage('戶別', 'units', rowsOf('unit'), { scope: () => S.m.units.filter(u => bldRows().some(b => b.id === u.building_id)).map(e => ({ ex: e, k: M.name('buildings', e.building_id) + '|' + e.code, nm: M.name('buildings', e.building_id) + ' ' + e.code })), used: e => XL_USE.unit.has(e.id), row: r => {
       const bn = need(r, '棟別'), code = need(r, '戶別'), b = findB(bn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const ex = b.id == null ? null : S.m.units.find(u => u.building_id === b.id && u.code === code);
       const mine = S.m.units.filter(u => u.building_id === b.id);
       return { k: bn + '|' + code, nm: bn + ' ' + code, ex, base: { building_id: b.id, sort: ns('u' + b.id, mine), active: true }, want: { code, sort: s, active: a } };
     } });
-    case 'space': return xlStage('空間別', 'spaces', rowsOf('space'), { row: r => {
+    case 'space': return xlStage('空間別', 'spaces', rowsOf('space'), { scope: () => S.m.spaces.map(e => ({ ex: e, k: M.name('inspect_types', e.inspect_type_id) + '|' + e.name, nm: M.name('inspect_types', e.inspect_type_id) + ' ' + e.name })), used: e => XL_USE.space.has(e.id), row: r => {
       const tn = need(r, '檢查類型'), n = need(r, '空間別'), t = findT(tn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const ex = t.id == null ? null : S.m.spaces.find(x => x.inspect_type_id === t.id && x.name === n);
       const mine = S.m.spaces.filter(x => x.inspect_type_id === t.id);
       return { k: tn + '|' + n, nm: tn + ' ' + n, ex, base: { inspect_type_id: t.id, code: '', sort: ns('s' + t.id, mine), active: true },
         want: { name: n, code: r['圖面代號'] === '' ? undefined : r['圖面代號'], sort: s, active: a } };
     } });
-    case 'cat': return xlStage('工項', 'categories', rowsOf('cat'), { row: r => {
+    case 'cat': return xlStage('工項', 'categories', rowsOf('cat'), { scope: () => S.m.categories.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.cat.has(e.id), row: r => {
       const n = need(r, '工項'), ex = S.m.categories.find(c => c.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       return { k: n, nm: n, ex, base: { sort: ns('c', S.m.categories), active: true }, want: { name: n, sort: s, active: a } };
     } });
-    case 'item': return xlStage('缺失內容', 'items', rowsOf('item'), { row: r => {
+    case 'item': return xlStage('缺失內容', 'items', rowsOf('item'), { scope: () => S.m.items.map(e => ({ ex: e, k: M.name('categories', e.category_id) + '|' + e.name, nm: M.name('categories', e.category_id) + ' ／ ' + e.name })), used: e => XL_USE.item.has(e.id), row: r => {
       const cn = need(r, '工項'), n = need(r, '缺失內容'), c = findC(cn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const ex = c.id == null ? null : S.m.items.find(x => x.category_id === c.id && x.name === n);
       const mine = S.m.items.filter(x => x.category_id === c.id);
@@ -177,6 +194,15 @@ function xlCompute(stage, data, pend) {
           res.names.push(r['工項'] + '→' + vn);
         });
       });
+      res.removes = [];
+      if (xlSync && data.cat && data.cat.rows.length && !data.cat.missing.includes('預設廠商')) {
+        data.cat.rows.forEach(r => {
+          const c = S.m.categories.find(x => x.name === r['工項']); if (!c) return;
+          const keep = new Set(splitNames(r['預設廠商'] || '').map(n => (S.m.vendors.find(v => v.name === n) || {}).id).filter(Boolean));
+          S.m.category_vendors.filter(m => m.category_id === c.id && !keep.has(m.vendor_id)).forEach(m =>
+            res.removes.push({ match: { category_id: m.category_id, vendor_id: m.vendor_id }, nm: c.name + '→' + M.name('vendors', m.vendor_id), used: false }));
+        });
+      }
       return res;
     }
   }
@@ -191,7 +217,20 @@ function xlPreview(data) {
     return r;
   });
 }
+async function xlRemove(r) {
+  r.deleted = 0; r.deactivated = 0;
+  for (const x of r.removes) {
+    let dq = sb.from(r.table).delete(); Object.keys(x.match).forEach(c => { dq = dq.eq(c, x.match[c]); });
+    const paths = r.table === 'units' ? S.m.plans.filter(p => p.unit_id === x.match.id).map(p => p.path) : [];
+    const { error } = await dq;
+    if (!error) { if (paths.length) await sb.storage.from('plans').remove(paths); r.deleted++; continue; }
+    if (r.table !== 'category_vendors' && (error.code === '23503' || /foreign key|violates/i.test(error.message))) {
+      await q(sb.from(r.table).update({ active: false }).eq('id', x.match.id)); r.deactivated++;
+    } else throw error;
+  }
+}
 async function xlApply(data, onStep) {
+  if (xlSync) { await xlLoadUsage(); XLSX.writeFile(xlBuildBook(true), `備份_匯入前_${today()}.xlsx`); }
   for (const st of XL_ORDER) {
     await loadMaster();
     const r = xlCompute(st, data, { bld: new Set(), itype: new Set(), cat: new Set(), vendor: new Set() });
@@ -200,46 +239,76 @@ async function xlApply(data, onStep) {
     for (const u of r.updates) await q(sb.from(r.table).update(u.patch).eq('id', u.id));
     onStep(r, 'done');
   }
+  if (xlSync) for (const st of XL_ORDER.slice().reverse()) {      // 先處理下層（缺失內容、戶別…）再處理上層
+    await loadMaster();
+    const r = xlCompute(st, data, { bld: new Set(), itype: new Set(), cat: new Set(), vendor: new Set() });
+    if (!r.removes.length) continue;
+    await xlRemove(r); onStep(r, 'removed');
+  }
   await loadMaster();
 }
 
 // ---------- 畫面 ----------
 function renderExcelAdmin(root) {
   const g = group('excel', 'Excel 批次設定', '匯出／填寫／匯入，新案場快速建立'); root.appendChild(g.d);
-  g.body.appendChild(el('div', 'banner', '新案場：下載「空白範本」填好再匯入，就把棟別、戶別、空間、工項、缺失內容、廠商一次建好。已有資料：先「匯出目前設定」，在 Excel 改完再匯入。匯入只新增與修改，不會刪東西；上面逐項修改的功能都還在。'));
+  g.body.appendChild(el('div', 'banner', '新案場：下載「空白範本」填好再匯入，就把棟別、戶別、空間、工項、缺失內容、廠商一次建好。已有資料：先「匯出目前設定」，在 Excel 改完再匯入。預設只新增與修改；勾選「完整同步」才會處理 Excel 裡刪掉的項目。上面逐項修改的功能都還在。'));
   const row = el('div', 'row');
   const ex = el('button', 'btn ghost', '匯出目前設定'); ex.onclick = () => { XLSX.writeFile(xlBuildBook(true), `設定_${today()}.xlsx`); };
   const tp = el('button', 'btn ghost', '下載空白範本'); tp.onclick = () => { XLSX.writeFile(xlBuildBook(false), '設定範本.xlsx'); };
   row.append(ex, tp); g.body.appendChild(row);
   g.body.appendChild(el('label', 'f', '選擇填好的 Excel 檔來匯入'));
   const fi = el('input'); fi.type = 'file'; fi.accept = '.xlsx,.xls'; fi.id = 'xl-file'; g.body.appendChild(fi);
+  const sl = el('label', 'hint'); const sc = el('input'); sc.type = 'checkbox'; sc.id = 'xl-sync'; sc.checked = xlSync;
+  sl.append(sc, document.createTextNode(' 完整同步：Excel 裡沒有的項目也處理（沒用過的刪除，用過的改成停用，舊紀錄保留；匯入前自動下載一份備份）'));
+  g.body.appendChild(sl);
   const out = el('div', 'stack'); out.id = 'xl-out'; g.body.appendChild(out);
-  fi.onchange = async () => {
-    const f = fi.files[0]; if (!f) return; out.innerHTML = '';
+  let data = null;
+
+  async function showPreview() {
+    out.innerHTML = ''; if (!data) return;
     try {
-      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
-      const data = xlRead(wb);
-      if (Object.values(data).every(x => x == null)) throw new Error('找不到任何設定工作表，請使用本系統匯出的檔案或空白範本。');
-      const bad = [];
-      Object.keys(data).forEach(k => { if (data[k] && data[k].missing.length) bad.push(`「${XL_SHEETS[k][0]}」缺少欄位：${data[k].missing.join('、')}`); });
-      if (bad.length) throw new Error(bad.join('；') + '。請不要修改欄位名稱。');
+      xlSync = sc.checked; if (xlSync) await xlLoadUsage();
       const plan = xlPreview(data);
-      const tot = plan.reduce((s, p) => s + p.inserts.length + p.updates.length, 0);
+      const nRm = plan.reduce((s, p) => s + p.removes.length, 0);
+      const tot = plan.reduce((s, p) => s + p.inserts.length + p.updates.length, 0) + nRm;
       const box = el('div', 'sublist');
       plan.forEach(p => {
-        const r = el('div', 'r'); r.append(el('span', 'grow', p.label), el('span', 'tag' + (p.inserts.length || p.updates.length ? ' ok' : ''), `新增 ${p.inserts.length}　修改 ${p.updates.length}`)); box.appendChild(r);
+        const r = el('div', 'r'); const tag = `新增 ${p.inserts.length}　修改 ${p.updates.length}` + (xlSync ? `　移除 ${p.removes.length}` : '');
+        r.append(el('span', 'grow', p.label), el('span', 'tag' + (p.inserts.length || p.updates.length || p.removes.length ? ' ok' : ''), tag)); box.appendChild(r);
+        if (p.removes.length) {
+          const del = p.removes.filter(x => !x.used).length, off = p.removes.length - del;
+          const names = p.removes.slice(0, 12).map(x => x.nm + (x.used ? '（停用）' : '（刪除）')).join('、') + (p.removes.length > 12 ? '…' : '');
+          box.appendChild(el('div', 'hint', `預估：刪除 ${del}、停用 ${off} → ${names}`));
+        }
+        if (p.skipSync) box.appendChild(el('div', 'hint', '⚠ 這張表有看不懂的列，這次不處理刪除'));
         p.warns.forEach(w => { const wr = el('div', 'hint', '⚠ ' + w); wr.style.color = 'var(--danger, #c0392b)'; box.appendChild(wr); });
       });
       out.appendChild(box);
       if (!tot) { out.appendChild(el('p', 'hint', '沒有需要新增或修改的項目。')); return; }
-      out.appendChild(el('p', 'hint', `共 ${tot} 筆變動（有⚠的列會略過）。確認無誤再按匯入。`));
-      const go = el('button', 'btn block', '確認匯入'); go.id = 'xl-go';
+      out.appendChild(el('p', 'hint', `共 ${tot} 筆變動（有⚠的列會略過）。` + (xlSync ? '完整同步會先下載備份檔，再動資料。' : '') + '確認無誤再按匯入。'));
+      const go = el('button', 'btn block' + (nRm ? ' danger' : ''), nRm ? '確認同步（含刪除／停用）' : '確認匯入'); go.id = 'xl-go';
       go.onclick = () => guard(go, async () => {
         const log = el('div', 'sublist'); out.appendChild(log); let n = 0;
-        await xlApply(data, (r, ph) => { if (ph === 'done' && (r.inserts.length || r.updates.length)) { n += r.inserts.length + r.updates.length; log.appendChild(el('div', 'hint', `✓ ${r.label}：新增 ${r.inserts.length}、修改 ${r.updates.length}`)); } });
-        toast(`匯入完成，共 ${n} 筆`); fi.value = ''; renderAdmin();
+        await xlApply(data, (r, ph) => {
+          if (ph === 'done' && (r.inserts.length || r.updates.length)) { n += r.inserts.length + r.updates.length; log.appendChild(el('div', 'hint', `✓ ${r.label}：新增 ${r.inserts.length}、修改 ${r.updates.length}`)); }
+          if (ph === 'removed') { n += r.removes.length; log.appendChild(el('div', 'hint', `✓ ${r.label}：刪除 ${r.deleted}、停用 ${r.deactivated}`)); }
+        });
+        toast(`完成，共 ${n} 筆`); fi.value = ''; data = null; renderAdmin();
       });
       out.appendChild(go);
-    } catch (e) { console.warn(e); const m = el('div', 'banner', errMsg(e)); out.appendChild(m); }
+    } catch (e) { console.warn(e); out.appendChild(el('div', 'banner', errMsg(e))); }
+  }
+  sc.onchange = () => { xlSync = sc.checked; showPreview(); };
+  fi.onchange = async () => {
+    const f = fi.files[0]; if (!f) return; out.innerHTML = ''; data = null;
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+      const d = xlRead(wb);
+      if (Object.values(d).every(x => x == null)) throw new Error('找不到任何設定工作表，請使用本系統匯出的檔案或空白範本。');
+      const bad = [];
+      Object.keys(d).forEach(k => { if (d[k] && d[k].missing.length) bad.push(`「${XL_SHEETS[k][0]}」缺少欄位：${d[k].missing.join('、')}`); });
+      if (bad.length) throw new Error(bad.join('；') + '。請不要修改欄位名稱。');
+      data = d; await showPreview();
+    } catch (e) { console.warn(e); out.appendChild(el('div', 'banner', errMsg(e))); }
   };
 }
