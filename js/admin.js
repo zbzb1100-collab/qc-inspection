@@ -147,7 +147,7 @@ function renderAdmin() {
     const types = M.list('inspect_types', false);
     if (!types.find(t => t.id === adminSel.spType)) adminSel.spType = (types.find(t => t.id === S.sel.typeId) || types[0] || {}).id;
     const sel = el('select'); fillSelect(sel, types, adminSel.spType, null); sel.onchange = () => { adminSel.spType = Number(sel.value); adminSel.space = null; renderAdmin(); };
-    g.body.appendChild(el('label', 'f', '檢查類型')); g.body.appendChild(sel);
+    g.body.appendChild(el('label', 'f', '空間別依檢查類型分開設定，先選要編輯哪一種的空間別')); g.body.appendChild(sel);
     const rows = S.m.spaces.filter(s => s.inspect_type_id === adminSel.spType).sort(bySort);
     const box = el('div', 'stack'); g.body.appendChild(box);
     chipEditor(box, { key: 'space', table: 'spaces', rows, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
