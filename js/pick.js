@@ -71,6 +71,7 @@ function pickPlan(unitId, floor) {
 let fillToken = 0;
 async function renderFill() {
   const s = S.sel; const tok = ++fillToken; S.placing = null; paintPlacing();
+  $('add-nopos').hidden = isVendor();
   const unit = M.get('units', s.unitId), b = M.get('buildings', s.bldId);
   if (!unit || !b) { show('pick'); return; }
   $('unitname').textContent = `${b.name} ${s.floor} ${unit.code}`;
@@ -165,6 +166,7 @@ function paintPlacing() {
   const c = el('button', 'iconbtn', '取消'); c.type = 'button'; c.onclick = e => { e.stopPropagation(); S.placing = null; paintPlacing(); }; b.appendChild(c);
 }
 $('plan').onclick = async e => {
+  if (isVendor() && !e.target.closest('.pin')) return;   // 廠商不能新增缺失
   if (S.placing && !e.target.closest('.pin')) {
     const r = $('planimg').getBoundingClientRect(); if (!r.width) return;
     const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));

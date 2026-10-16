@@ -19,6 +19,7 @@ const S = {
   unitDefects: [],   // 目前這戶的缺失
 };
 const isAdmin = () => S.profile && S.profile.role === 'admin' && S.profile.active;
+const isVendor = () => !!S.profile && S.profile.role === 'vendor';   // 廠商帳號：只看自己的缺失、只能回報修繕完成
 
 const MASTER_TABLES = ['sites', 'inspect_types', 'buildings', 'units', 'spaces', 'categories', 'items',
   'vendors', 'category_vendors', 'repair_methods', 'plans', 'plan_spaces', 'profiles'];

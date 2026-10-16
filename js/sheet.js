@@ -34,7 +34,7 @@ function paintSheet() {
   $('sh-title').textContent = isNew ? '新增缺失' : '缺失內容';
   $('sh-where').textContent = `${bName} ${cur.floor} ${uCode}　${M.name('inspect_types', cur.inspect_type_id)}` +
     (cur.x != null ? '　已標在平面圖上' : '　未標位置');
-  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace;
+  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace && !isVendor();
   $('sh-placerow').hidden = !canPlace;
   $('sh-place').textContent = cur.x != null ? '📍 重新標位置' : '📍 在平面圖上標位置';
   $('sh-unplace').hidden = cur.x == null;
@@ -62,7 +62,17 @@ function paintSheet() {
     `建立：${M.userName(cur.created_by)} ${fmtTime(cur.created_at)}　最後修改：${M.userName(cur.updated_by) || M.userName(cur.created_by)} ${fmtTime(cur.updated_at)}` +
     (cur.fixed_at ? `　修繕完成登錄：${M.userName(cur.fixed_by)} ${fmtTime(cur.fixed_at)}` : '') +
     (cur.closed_at ? `　結案：${M.userName(cur.closed_by)} ${fmtTime(cur.closed_at)}` : '');
+  paintVendorMode();
   paintPhotos();
+}
+// 廠商帳號：缺失內容只能看；只能填修繕完成日、拍修繕後照片、按①
+function paintVendorMode() {
+  const v = isVendor(); const panel = $('sheet').querySelector('.panel');
+  panel.querySelectorAll('.chip, #sh-cust, #sh-date, #sh-desc, #sh-fixvendor-other, #sh-vendor').forEach(x => { x.disabled = v; });
+  if (!v) return;
+  ['sh-pass', 'sh-nofix', 'sh-reopen', 'sh-del', 'sh-save'].forEach(id => { $(id).hidden = true; });
+  if (cur.status === 'fixed') $('sh-closeinfo').textContent = '已回報修繕完成，等甲方複驗。';
+  if (cur.status === 'todo') $('sh-closeinfo').textContent = '修好後拍「修繕後照片」，再按①回報。';
 }
 
 function paintChoices() {
@@ -104,13 +114,14 @@ function photoBox(box, arr, kind) {
   box.innerHTML = '';
   arr.forEach(p => {
     const w = el('div', 'ph'); const im = el('img'); im.src = p.url; im.alt = '缺失照片'; im.onclick = () => showViewer(p.url); w.appendChild(im);
-    if (!p.id || isAdmin() || p.by === S.user.id) {
+    if (!p.id || isAdmin() || (p.by === S.user.id && !(isVendor() && kind === 'before'))) {
       const x = el('button', null, '×'); x.type = 'button'; x.title = '刪除這張';
       x.onclick = () => { arr.splice(arr.indexOf(p), 1); if (p.id) cur.removed.push(p); else URL.revokeObjectURL(p.url); paintPhotos(); };
       w.appendChild(x);
     }
     box.appendChild(w);
   });
+  if (isVendor() && (kind === 'before' || cur.status !== 'todo')) return;   // 廠商只能在待修時補修繕後照片
   const lab = el('label'); lab.innerHTML = kind === 'after' ? '＋拍照<br>修繕後' : '＋拍照<br>或選圖';
   const inp = el('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
   inp.onchange = async () => {

@@ -44,7 +44,7 @@ async function enter(user) {
   $('login').hidden = true; $('app').hidden = false;
   $('userbtn').textContent = S.profile.name || S.profile.email || '我';
   $('t-admin').hidden = !isAdmin();
-  show('pick');
+  show(isVendor() ? 'report' : 'pick');   // 廠商一進來就看自己的缺失清單
 }
 
 (async function boot() {
