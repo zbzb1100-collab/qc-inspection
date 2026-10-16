@@ -52,6 +52,23 @@ function chipEditor(box, o) {
       });
     };
     ed.append(save, tg, del); box.appendChild(ed);
+    if (o.merge) {                                    // 合併：A 和 B 其實是同一個，把 A 的紀錄全部改掛到 B，再刪掉 A
+      const others = rows.filter(r => r.id !== selRow.id);
+      const mr = el('div', 'inline-add'); const ms = el('select'); fillSelect(ms, others, null, '合併到…（選擇保留的那個）', r => o.label(r) + (r.active === false ? '（已停用）' : ''));
+      const mb = el('button', 'btn ghost small', '合併'); mb.onclick = () => {
+        if (!ms.value) { toast('先選要合併到哪一個'); return; }
+        const tgt = others.find(r => String(r.id) === ms.value);
+        if (!mb.dataset.arm) { mb.dataset.arm = '1'; mb.textContent = `確定把「${o.label(selRow)}」併入「${o.label(tgt)}」？`; setTimeout(() => { delete mb.dataset.arm; mb.textContent = '合併'; }, 5000); return; }
+        guard(mb, async () => {
+          for (const ref of o.merge.refs) await q(sb.from(ref[0]).update({ [ref[1]]: tgt.id }).eq(ref[1], selRow.id));
+          if (o.merge.extra) await o.merge.extra(selRow, tgt);
+          await q(sb.from(o.table).delete().eq('id', selRow.id));
+          adminSel[o.key] = tgt.id; await reloadAdmin(); toast(`已合併，「${o.label(selRow)}」的紀錄都改成「${o.label(tgt)}」`);
+        });
+      };
+      mr.append(ms, mb); box.appendChild(mr);
+      box.appendChild(el('p', 'hint', '合併：兩個其實是同一個時用。選中的這個會消失，它所有舊紀錄改掛到你選的那個。'));
+    }
     box.appendChild(el('p', 'hint', (sortable ? '排序：數字小的排前面。' : '') + '停用＝填寫時不再出現但保留舊紀錄；刪除＝只有從未被使用的項目能刪。'));
   }
   const ad = el('div', 'inline-add'); const ai = el('input'); ai.type = 'text'; ai.placeholder = o.placeholder || '新增…（可用「、」一次輸入多個）'; ad.appendChild(ai);
@@ -121,7 +138,11 @@ function renderAdmin() {
     g.body.appendChild(el('label', 'f', '檢查類型')); g.body.appendChild(sel);
     const rows = S.m.spaces.filter(s => s.inspect_type_id === adminSel.spType).sort(bySort);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'space', table: 'spaces', rows, label: r => r.name,
+    chipEditor(box, { key: 'space', table: 'spaces', rows, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
+        const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
+        for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
+        await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
+      } }, label: r => r.name,
       onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: adminSel.spType, name: n, code: '', sort: nextSort(rows) + k })))),
       placeholder: '新增空間別，例：玄關' }); }
 
@@ -136,7 +157,7 @@ function renderAdmin() {
     if (c) {
       g.body.appendChild(el('label', 'f', `② ${c.name} 的缺失內容`));
       const ibox = el('div', 'stack'); g.body.appendChild(ibox);
-      chipEditor(ibox, { key: 'item', table: 'items', rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
+      chipEditor(ibox, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
         onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i })))),
         placeholder: '新增缺失內容' });
       g.body.appendChild(el('label', 'f', `③ ${c.name} 的預設廠商（點選＝加入／移除；可多家）`));
@@ -157,7 +178,13 @@ function renderAdmin() {
 
   // 5 廠商
   { const g = group('vendor', '廠商'); root.appendChild(g.d); const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'vendor', table: 'vendors', sortable: false, rows: M.list('vendors', false), label: r => r.name,
+    chipEditor(box, { key: 'vendor', table: 'vendors', sortable: false,
+      merge: { refs: [['defects', 'fix_vendor_id'], ['defects', 'resp_vendor_id']], extra: async (a, b) => {
+        const have = new Set(S.m.category_vendors.filter(m => m.vendor_id === b.id).map(m => m.category_id));
+        for (const m of S.m.category_vendors.filter(m => m.vendor_id === a.id && !have.has(m.category_id)))
+          await q(sb.from('category_vendors').insert({ category_id: m.category_id, vendor_id: b.id, sort: m.sort }));
+        await q(sb.from('category_vendors').delete().eq('vendor_id', a.id));
+      } }, rows: M.list('vendors', false), label: r => r.name,
       onAdd: names => q(sb.from('vendors').insert(names.map(n => ({ name: n })))),
       placeholder: '新增廠商全名' }); }
 
@@ -165,7 +192,7 @@ function renderAdmin() {
   { const g = group('misc', '其他清單', '修繕方式、檢查類型、案場'); root.appendChild(g.d);
     [['repair_methods', '修繕方式'], ['inspect_types', '檢查類型'], ['sites', '案場']].forEach(([t, title]) => {
       g.body.appendChild(el('label', 'f', title)); const box = el('div', 'stack'); g.body.appendChild(box);
-      chipEditor(box, { key: t, table: t, rows: M.list(t, false), label: r => r.name,
+      chipEditor(box, { key: t, table: t, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null, rows: M.list(t, false), label: r => r.name,
         onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i })))),
         placeholder: '新增' + title });
     }); }

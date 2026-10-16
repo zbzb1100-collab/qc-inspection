@@ -110,5 +110,19 @@ const a1 = db2.units.find(u => u.code === 'A1'); ok(a1 && a1.active === false, '
 ok(!db2.items.some(i => i.name === '踢腳板鬆脫') && db2.items.find(i => i.name === '有漏水或滲水情況').active === false, '缺失內容：沒用過刪除、用過停用');
 ok(db2.units.some(u => u.code === 'S1' && u.active !== false), '檔案裡仍有的項目不受影響');
 ok(db2.defects.length === 1, '缺失紀錄完全保留');
+
+// ---- 合併 ----
+await page.evaluate(() => { window.__db.T.defects.push({ id: 2, site_id: 1, inspect_type_id: 1, building_id: 1, floor: '3F', unit_id: 3, fix_vendor_id: 3, resp_vendor_id: 3, status: 'todo' }); });
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.trim() === '廠商') d.open = true; }));
+const vd = page.locator('#admin-root details:has(> summary:text-is("廠商"))');
+await vd.locator('button.chip:has-text("捷挺裝潢")').click();
+await vd.locator('select').selectOption({ label: '太隆興業' });
+await vd.locator('button:text-is("合併")').click(); await vd.locator('button:has-text("確定把")').click();
+await page.waitForTimeout(500);
+const db3 = await page.evaluate(() => window.__db.T);
+const d2r = db3.defects.find(d => d.id === 2);
+ok(d2r.fix_vendor_id === 1 && d2r.resp_vendor_id === 1, '合併：舊紀錄的修繕/責任廠商改掛到保留的廠商');
+ok(!db3.vendors.some(v => v.name === '捷挺裝潢'), '合併：被併掉的廠商已移除');
+ok(db3.category_vendors.some(m => m.category_id === 2 && m.vendor_id === 1), '合併：工項預設廠商對應一併轉移');
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);
