@@ -57,7 +57,7 @@ function drawReport() {
   const tb = $('rtable'); tb.innerHTML = '';
   rows.slice(0, SHOW_MAX).forEach(d => {
     const tr = el('tr'); tr.style.cursor = 'pointer';
-    [`${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`, M.name('spaces', d.space_id),
+    [`${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}\n${M.name('inspect_types', d.inspect_type_id) || ''}`, M.name('spaces', d.space_id),
       `${M.name('categories', d.category_id)}\n${M.name('items', d.item_id)}`,
       `${M.name('vendors', d.fix_vendor_id) || '—'}\n${M.name('vendors', d.resp_vendor_id) || '—'}`].forEach(v => {
       const td = el('td', null, v); td.style.whiteSpace = 'pre-line'; tr.appendChild(td);

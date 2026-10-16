@@ -94,6 +94,17 @@ async function renderFill() {
   if (error) { toast(errMsg(error)); return; }
   S.unitDefects = data;
   drawPins(); drawList();
+  // 同戶同樓層、其他檢查類型的缺失（填寫頁只顯示目前檢查類型，避免混在一起）
+  const { data: oth } = await sb.from('defects').select('inspect_type_id')
+    .eq('unit_id', s.unitId).eq('floor', s.floor).neq('inspect_type_id', s.typeId).limit(500);
+  if (tok !== fillToken || !oth || !oth.length) return;
+  const by = {}; oth.forEach(d => { by[d.inspect_type_id] = (by[d.inspect_type_id] || 0) + 1; });
+  const box = $('dlist');
+  Object.keys(by).forEach(tid => {
+    const b = el('button', 'btn ghost block', `此戶另有 ${by[tid]} 筆「${M.name('inspect_types', Number(tid))}」的缺失，點此切換查看`); b.type = 'button';
+    b.onclick = () => { s.typeId = Number(tid); saveSel(); renderFill(); };
+    box.appendChild(b);
+  });
 }
 function drawPins() {
   const plan = $('plan');
