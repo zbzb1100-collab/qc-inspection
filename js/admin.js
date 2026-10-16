@@ -137,6 +137,7 @@ function renderAdmin() {
   root.appendChild(el('div', 'banner', '清單都在這裡自己改，不用找廠商。新增或停用後，填寫頁馬上跟著變。'));
   const siteId = S.sel.siteId;
   renderExcelAdmin(root);
+  renderImportAdmin(root);
 
   // 順序跟選戶畫面一致：案場 → 檢查類型 → 棟別／樓層 → 戶別
   simpleGroup('sites', '案場', '多個案場時，選戶畫面最上面的選單');
