@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610160838">
+<link rel="stylesheet" href="css/app.css?v=202610160845">
 </head>
 <body>
 
@@ -52,6 +52,7 @@
           <div style="flex:1;min-width:0"><b id="unitname" style="font-size:17px"></b><span class="hint" id="plannote"></span></div>
         </div>
         <p class="hint">在平面圖上<b>點缺失位置</b>就會新增一筆；點已有的編號進去可修改、上傳修繕後照片、複驗結案。</p>
+        <div class="banner" id="placebanner" hidden></div>
         <div class="plan" id="plan"><img id="planimg" alt="戶型平面圖" draggable="false"></div>
         <div class="legend-marks" id="marklegend"></div>
         <div class="row" style="justify-content:space-between"><b>本戶缺失 <span id="cnt"></span></b><span class="hint">紅＝待修　黃＝已修繕　綠＝結案</span></div>
@@ -104,6 +105,7 @@
     <div class="row" style="justify-content:space-between"><button class="iconbtn" id="sh-back">‹ 返回</button><span class="status todo" id="sh-status">待修</span></div>
     <h2><span class="no" id="sh-no">1</span><span id="sh-title">新增缺失</span></h2>
     <div class="hint" id="sh-where"></div>
+    <div class="row" id="sh-placerow" hidden><button class="btn ghost" id="sh-place" type="button"></button><button class="btn ghost" id="sh-unplace" type="button">移除位置</button></div>
     <div id="sh-cust-wrap"><label class="f">客戶名稱（交屋檢查）</label><input type="text" id="sh-cust" placeholder="選填"></div>
     <div><label class="f">空間</label><div class="chips" id="sh-space"></div></div>
     <div><label class="f">工項</label><div class="chips" id="sh-cat"></div></div>
@@ -145,13 +147,13 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610160838"></script>
-<script src="js/core.js?v=202610160838"></script>
-<script src="js/pick.js?v=202610160838"></script>
-<script src="js/sheet.js?v=202610160838"></script>
-<script src="js/report.js?v=202610160838"></script>
-<script src="js/admin.js?v=202610160838"></script>
-<script src="js/admin_excel.js?v=202610160838"></script>
-<script src="js/main.js?v=202610160838"></script>
+<script src="config.js?v=202610160845"></script>
+<script src="js/core.js?v=202610160845"></script>
+<script src="js/pick.js?v=202610160845"></script>
+<script src="js/sheet.js?v=202610160845"></script>
+<script src="js/report.js?v=202610160845"></script>
+<script src="js/admin.js?v=202610160845"></script>
+<script src="js/admin_excel.js?v=202610160845"></script>
+<script src="js/main.js?v=202610160845"></script>
 </body>
 </html>

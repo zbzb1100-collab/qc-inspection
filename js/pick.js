@@ -70,7 +70,7 @@ function pickPlan(unitId, floor) {
 }
 let fillToken = 0;
 async function renderFill() {
-  const s = S.sel; const tok = ++fillToken;
+  const s = S.sel; const tok = ++fillToken; S.placing = null; paintPlacing();
   const unit = M.get('units', s.unitId), b = M.get('buildings', s.bldId);
   if (!unit || !b) { show('pick'); return; }
   $('unitname').textContent = `${b.name} ${s.floor} ${unit.code}`;
@@ -125,7 +125,7 @@ function drawPins() {
     if (d.x == null || d.plan_id == null) return;
     const p = el('button', 'pin ' + d.status, String(i + 1)); p.type = 'button';
     p.style.left = (d.x * 100) + '%'; p.style.top = (d.y * 100) + '%';
-    p.onclick = e => { e.stopPropagation(); openDefect(d, { no: i + 1, onDone: renderFill }); };
+    p.onclick = e => { e.stopPropagation(); openDefect(d, { no: i + 1, onDone: renderFill, canPlace: true, onPlace: startPlacing }); };
     plan.appendChild(p);
   });
 }
@@ -140,7 +140,7 @@ function drawList() {
     t.appendChild(el('b', null, `${M.name('categories', d.category_id) || '（未選工項）'}　${M.name('items', d.item_id)}`));
     t.appendChild(el('small', null, `${M.name('spaces', d.space_id) || '未選空間'}　修繕：${M.name('vendors', d.fix_vendor_id) || '—'}　責任：${M.name('vendors', d.resp_vendor_id) || '—'}`));
     it.appendChild(t); it.appendChild(el('span', 'status ' + d.status, STATUS[d.status]));
-    const open = () => openDefect(d, { no: i + 1, onDone: renderFill });
+    const open = () => openDefect(d, { no: i + 1, onDone: renderFill, canPlace: true, onPlace: startPlacing });
     it.onclick = open; it.onkeydown = e => { if (e.key === 'Enter') open(); };
     box.appendChild(it);
   });
@@ -152,7 +152,27 @@ function newDefectCtx(x, y) {
     plan_id: x == null ? null : (S.curPlan && S.curPlan.id), x: x ?? null, y: y ?? null
   };
 }
-$('plan').onclick = e => {
+function startPlacing(id) {
+  if (!S.curPlan) { toast('這戶沒有平面圖，無法標位置'); return; }
+  S.placing = id; paintPlacing();
+  $('plan').scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+function paintPlacing() {
+  const b = $('placebanner'); b.hidden = !S.placing; b.textContent = '';
+  if (!S.placing) return;
+  const d = S.unitDefects.find(x => x.id === S.placing);
+  b.append(`請在平面圖上點一下，標出「${d ? (M.name('items', d.item_id) || '此缺失') : '此缺失'}」的位置　`);
+  const c = el('button', 'iconbtn', '取消'); c.type = 'button'; c.onclick = e => { e.stopPropagation(); S.placing = null; paintPlacing(); }; b.appendChild(c);
+}
+$('plan').onclick = async e => {
+  if (S.placing && !e.target.closest('.pin')) {
+    const r = $('planimg').getBoundingClientRect(); if (!r.width) return;
+    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    const id = S.placing; S.placing = null; paintPlacing();
+    const { error } = await sb.from('defects').update({ plan_id: S.curPlan.id, x, y }).eq('id', id);
+    if (error) { toast(errMsg(error)); return; }
+    toast('已標上位置'); renderFill(); return;
+  }
   if (e.target.closest('.pin')) return;
   const r = $('planimg').getBoundingClientRect(); if (!r.width) return;
   const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
@@ -160,4 +180,4 @@ $('plan').onclick = e => {
   openDefect(null, { no: S.unitDefects.length + 1, create: newDefectCtx(x, y), onDone: renderFill });
 };
 $('add-nopos').onclick = () => openDefect(null, { no: S.unitDefects.length + 1, create: newDefectCtx(null, null), onDone: renderFill });
-$('back').onclick = () => show('pick');
+$('back').onclick = () => { S.placing = null; paintPlacing(); show('pick'); };

@@ -34,6 +34,10 @@ function paintSheet() {
   $('sh-title').textContent = isNew ? '新增缺失' : '缺失內容';
   $('sh-where').textContent = `${bName} ${cur.floor} ${uCode}　${M.name('inspect_types', cur.inspect_type_id)}` +
     (cur.x != null ? '　已標在平面圖上' : '　未標位置');
+  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace;
+  $('sh-placerow').hidden = !canPlace;
+  $('sh-place').textContent = cur.x != null ? '📍 重新標位置' : '📍 在平面圖上標位置';
+  $('sh-unplace').hidden = cur.x == null;
   const st = $('sh-status'); st.className = 'status ' + cur.status; st.textContent = STATUS[cur.status];
   $('sh-cust-wrap').hidden = M.name('inspect_types', cur.inspect_type_id) !== '交屋檢查';
   $('sh-cust').value = cur.customer_name || '';
@@ -173,6 +177,15 @@ async function setStatus(patch) {
 }
 function done(msg) { toast(msg); const cb = ctx.onDone; closeSheet(); if (cb) cb(); }
 
+$('sh-place').onclick = e => guard(e.currentTarget, async () => {
+  await persist(false);
+  const id = cur.id, cb = ctx.onPlace; closeSheet(); cb(id);
+});
+$('sh-unplace').onclick = e => guard(e.currentTarget, async () => {
+  await persist(false);
+  await setStatus({ plan_id: null, x: null, y: null });
+  done('已移除位置');
+});
 $('sh-save').onclick = e => guard(e.currentTarget, async () => { await persist(); done('已儲存'); });
 $('sh-fixed').onclick = e => guard(e.currentTarget, async () => {
   await persist();
