@@ -46,10 +46,10 @@ begin
       raise exception '不允許的狀態變更：% → %', old.status, new.status;
     end if;
   else
-    -- 狀態沒變：結案方式與原因不能偷改
-    new.close_type := old.close_type; new.close_reason := old.close_reason;
-    if old.status = 'closed' and not adm then
-      raise exception '已結案的缺失只有管理者能修改';
+    -- 狀態沒變：結案方式不能單獨改（內容、照片、說明大家都能改，最後修改者有紀錄）
+    new.close_type := old.close_type;
+    if old.status = 'closed' and old.close_type = '不修' and coalesce(btrim(new.close_reason), '') = '' then
+      new.close_reason := old.close_reason;
     end if;
   end if;
 

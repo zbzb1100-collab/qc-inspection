@@ -34,7 +34,7 @@ function paintSheet() {
   $('sh-title').textContent = isNew ? '新增缺失' : '缺失內容';
   $('sh-where').textContent = `${bName} ${cur.floor} ${uCode}　${M.name('inspect_types', cur.inspect_type_id)}` +
     (cur.x != null ? '　已標在平面圖上' : '　未標位置');
-  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace && !(cur.status === 'closed' && !isAdmin());
+  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace;
   $('sh-placerow').hidden = !canPlace;
   $('sh-place').textContent = cur.x != null ? '📍 重新標位置' : '📍 在平面圖上標位置';
   $('sh-unplace').hidden = cur.x == null;
@@ -57,7 +57,6 @@ function paintSheet() {
   $('sh-closeinfo').textContent = st2 === 'closed'
     ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}`
     : (st2 === 'fixed' ? '廠商已修繕，等複驗。複驗合格就按②結案；不合格按「退回待修」。' : '修好後拍「修繕後照片」，再按①。');
-  $('sh-save').hidden = st2 === 'closed' && !isAdmin();   // 已結案只有管理者能改（資料庫也會擋）
   $('sh-del').hidden = isNew || !isAdmin(); $('sh-del').textContent = '刪除';
   $('sh-trail').textContent = isNew ? '' :
     `建立：${M.userName(cur.created_by)} ${fmtTime(cur.created_at)}　最後修改：${M.userName(cur.updated_by) || M.userName(cur.created_by)} ${fmtTime(cur.updated_at)}` +
