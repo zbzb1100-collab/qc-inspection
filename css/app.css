@@ -127,3 +127,31 @@ input[type=email],input[type=password],input[type=number]{width:100%;font:inheri
 
 [hidden]{display:none!important}
 #app{display:flex;flex-direction:column;flex:1;min-height:0}
+
+/* ---- 字體放大（整體再大一級，方便現場手機閱讀）---- */
+body{font-size:17px}
+.topbar h1{font-size:19px}.topbar .crumb{font-size:15px}
+.iconbtn{font-size:15px;padding:8px 12px}
+label.f{font-size:14px}
+.chip{font-size:16px;padding:9px 14px}
+.units button{font-size:18px}.units button .n{font-size:13px}
+.hint{font-size:15px}
+.item .no{width:30px;height:30px;font-size:14px}.item .t small{font-size:14px}
+.status{font-size:13px;padding:4px 10px}
+.sheet h2{font-size:19px}.sheet h2 .no{width:30px;height:30px;font-size:15px}
+.photos label{font-size:14px}
+.tabs button{font-size:14px}
+.kv{font-size:15px}
+.toast{font-size:15px}
+.banner{font-size:15px}
+.stat b{font-size:26px}.stat small{font-size:14px}
+table{font-size:15px}th{font-size:14px}
+.admin-group .sub{font-size:14px}
+.err{font-size:15px}
+.tag{font-size:13px}
+.small{font-size:15px;padding:8px 12px}
+.legend-marks{font-size:14px}
+.mark{font-size:13px}
+input,select,textarea,button{font-size:inherit}
+input[type=text],input[type=number],input[type=email],input[type=password],input[type=date],select,textarea{font-size:17px}
+summary{font-size:18px}
