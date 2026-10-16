@@ -175,21 +175,24 @@ function renderAdmin() {
     chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
       onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i })))),
       placeholder: '新增戶別，例：A9' });
-    const su = S.m.units.find(x => x.id === adminSel.unit); if (su) unitSpacesEditor(g.body, su); }
+    const su = S.m.units.find(x => x.id === adminSel.unit); if (su) unitSpacesEditor(g.body, su);
+    // 空間別總清單（新增、改名、圖面代號、排序、停用、合併）收在戶別裡面
+    { const nd = el('details'); nd.open = adminOpen.has('space'); nd.addEventListener('toggle', () => { nd.open ? adminOpen.add('space') : adminOpen.delete('space'); });
+      const ns = el('summary', null, '編輯空間別總清單（新增、改名、圖面代號、排序、停用）'); ns.style.cssText = 'cursor:pointer;font-weight:700;margin-top:10px'; nd.appendChild(ns);
+      const nb = el('div', 'stack'); nb.style.marginTop = '8px'; nd.appendChild(nb); g.body.appendChild(nd);
+      const rows = S.m.spaces.slice().sort(bySort);
+      const typeId = (rows[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;
+      const box2 = el('div', 'stack'); nb.appendChild(box2);
+      chipEditor(box2, { key: 'space', table: 'spaces', rows, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
+          const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
+          for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
+          await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
+          const have = new Set(S.m.unit_spaces.filter(m => m.space_id === b.id).map(m => m.unit_id));
+          for (const m of S.m.unit_spaces.filter(m => m.space_id === a.id && !have.has(m.unit_id))) await q(sb.from('unit_spaces').insert({ unit_id: m.unit_id, space_id: b.id }));
+        } },
+        onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(rows) + k })))),
+        placeholder: '新增空間別，例：玄關' }); } }
 
-  // 3 空間別（總清單；每戶有哪些空間，在「戶別」設定）
-  { const g = group('space', '空間別', '所有可用空間的總清單'); root.appendChild(g.d);
-    g.body.appendChild(el('p', 'hint', '這裡是所有可用的空間。每一戶有哪些空間，到上面「戶別」點選那一戶來勾選；還沒設定的戶會先顯示全部。'));
-    const rows = S.m.spaces.slice().sort(bySort);
-    const typeId = (rows[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;
-    const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'space', table: 'spaces', rows, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
-        const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
-        for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
-        await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
-      } },
-      onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(rows) + k })))),
-      placeholder: '新增空間別，例：玄關' }); }
 
   // 4 工項與缺失內容與廠商對應
   { const g = group('cat', '工項、缺失內容、預設廠商'); root.appendChild(g.d);
