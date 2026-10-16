@@ -7,6 +7,7 @@ const XLSX = createRequire(process.env.XLSX_DIR || '/tmp/claude-0/xl/')('xlsx');
 const root = new URL('..', import.meta.url).pathname;
 const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');
 const xlsxSrc = fs.readFileSync(process.env.XLSX_DIR ? process.env.XLSX_DIR + 'node_modules/xlsx/dist/xlsx.full.min.js' : '/tmp/claude-0/xl/node_modules/xlsx/dist/xlsx.full.min.js', 'utf8');
+const exceljsSrc = fs.readFileSync('/tmp/claude-0/xl/node_modules/exceljs/dist/exceljs.min.js', 'utf8');
 const results = []; const fail = [];
 const ok = (c, m) => { results.push((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail.push(m); };
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] }).catch(() => chromium.launch({ args: ['--no-sandbox'] }));
@@ -18,6 +19,7 @@ await page.route('**/*', r => {
   const u = r.request().url();
   if (u.startsWith('file://')) return r.continue();
   if (u.includes('supabase')) return r.fulfill({ contentType: 'application/javascript', body: '' });
+  if (u.includes('exceljs')) return r.fulfill({ contentType: 'application/javascript', body: exceljsSrc });
   if (u.includes('xlsx')) return r.fulfill({ contentType: 'application/javascript', body: xlsxSrc });
   return r.fulfill({ contentType: 'text/css', body: '' });
 });
@@ -138,5 +140,20 @@ ok((await page.evaluate(() => M.spacesFor(99, '3F').length)) === await page.eval
 await ud.locator('select').first().selectOption({ label: 'A1（2 個空間）' }).catch(() => {});
 await ud.locator('button:has-text("套用到同棟全部戶別")').click(); await ud.locator('button:has-text("確定覆蓋")').click(); await page.waitForTimeout(400);
 ok((await page.evaluate(() => window.__db.T.unit_spaces.filter(m => m.unit_id === 99).length)) === 2, '套用到同棟全部戶別');
+
+// ---- 含照片匯出 ----
+await page.evaluate(() => { const T = window.__db.T; T.defect_photos.push({ id: 1, defect_id: 1, kind: 'before', path: 'a.jpg' }, { id: 2, defect_id: 1, kind: 'after', path: 'b.jpg' }, { id: 3, defect_id: 2, kind: 'before', path: 'c.jpg' }); });
+await page.click('#t-report'); await page.waitForSelector('#f-go'); await page.click('#f-go'); await page.waitForTimeout(500);
+const [dp] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export-photo')]);
+await dp.saveAs('/tmp/claude-0/xl/photo.xlsx');
+const zipList = (await import('child_process')).execSync('unzip -l /tmp/claude-0/xl/photo.xlsx').toString();
+ok((zipList.match(/xl\/media\/image\d+\.jpeg/g) || []).length === 3, '含照片匯出：3 張照片都嵌入 Excel');
+const w4 = XLSX.readFile('/tmp/claude-0/xl/photo.xlsx'); const hd = XLSX.utils.sheet_to_json(w4.Sheets[w4.SheetNames[0]], { header: 1 })[0];
+ok(hd.includes('修繕前照片1') && hd.includes('修繕後照片1'), '含照片匯出：有修繕前、修繕後欄位');
+await page.uncheck('#f-ph-after');
+const [dp2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export-photo')]);
+await dp2.saveAs('/tmp/claude-0/xl/photo2.xlsx');
+const hd2 = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/photo2.xlsx').Sheets['缺失清單（含照片）'], { header: 1 })[0];
+ok(hd2.includes('修繕前照片1') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);

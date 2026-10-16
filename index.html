@@ -72,7 +72,9 @@
             <select id="f-status"><option value="">全部狀態</option><option value="todo">待修</option><option value="fixed">已修繕</option><option value="closed">結案</option></select>
             <select id="f-fixv"></select><select id="f-respv"></select>
           </div>
-          <div class="row"><button class="btn ghost" id="f-clear">清除條件</button><button class="btn" id="f-go" style="flex:1">查詢</button><button class="btn ghost" id="f-export">匯出 Excel</button></div>
+          <div class="row"><button class="btn ghost" id="f-clear">清除條件</button><button class="btn" id="f-go" style="flex:1">查詢</button></div>
+          <div class="row"><button class="btn ghost" id="f-export" style="flex:1">匯出 Excel（文字）</button><button class="btn ghost" id="f-export-photo" style="flex:1">匯出 Excel（含照片）</button></div>
+          <div class="row" style="gap:16px"><label class="hint"><input type="checkbox" id="f-ph-before" checked> 附修繕前照片</label><label class="hint"><input type="checkbox" id="f-ph-after" checked> 附修繕後照片</label></div>
         </div>
         <div class="stat"><div><b id="st-all">0</b><small>筆</small></div><div><b id="st-todo">0</b><small>待修</small></div><div><b id="st-closed">0</b><small>結案</small></div></div>
         <div class="tablewrap"><table><thead><tr><th>戶</th><th>空間</th><th>工項 / 缺失</th><th>修繕廠商 / 責任廠商</th><th>狀態</th></tr></thead><tbody id="rtable"></tbody></table></div>

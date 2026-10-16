@@ -99,3 +99,71 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
   XLSX.writeFile(wb, `品質查驗報表_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
   toast(`已匯出 ${rows.length} 筆`);
 });
+
+
+// ---------- 匯出 Excel（含照片）----------
+function loadScriptOnce(src) {
+  return new Promise((res, rej) => {
+    if (document.querySelector(`script[data-src="${src}"]`)) { res(); return; }
+    const t = document.createElement('script'); t.src = src; t.dataset.src = src; t.onload = res;
+    t.onerror = () => rej(new Error('匯出元件載入失敗，請確認網路後再試')); document.head.appendChild(t);
+  });
+}
+const PHOTO_MAX_ROWS = 600, PHOTO_PER_KIND = 3;
+$('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
+  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
+  const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
+  if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
+  const rows = reportRows.slice().sort((a, b) => a.id - b.id);
+  const ids = rows.map(r => r.id); let photos = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await sb.from('defect_photos').select('id,defect_id,kind,path').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
+    if (error) throw error; photos = photos.concat(data);
+  }
+  const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; (by[k] = by[k] || []).length < PHOTO_PER_KIND && by[k].push(p); });
+  const use = Object.values(by).flat();
+  if (use.length > PHOTO_MAX_ROWS) throw new Error(`符合的照片有 ${use.length} 張，一次最多匯出 ${PHOTO_MAX_ROWS} 張，請先縮小篩選條件（例如先選棟別或樓層）。`);
+  if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
+  const urls = await signedUrls('photos', use.map(p => p.path));
+  const imgs = new Map(); let done = 0, next = 0;
+  const worker = async () => {
+    while (next < use.length) {
+      const i = next++; const p = use[i];
+      try {
+        const blob = await (await fetch(urls[i])).blob();
+        const small = await compressImage(blob, 640, 0.7);            // Excel 內縮小，檔案才不會太大
+        imgs.set(p.id, await small.arrayBuffer());
+      } catch (err) { console.warn('照片載入失敗', p.path, err); }
+      done++; if (done % 10 === 0 || done === use.length) toast(`整理照片 ${done} / ${use.length}…`);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker(), worker()]);
+
+  const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單（含照片）');
+  const textHead = ['編號', '棟別', '樓層', '戶別', '空間', '工項', '缺失內容', '修繕廠商', '責任廠商', '狀態', '預計修繕日', '實際修繕日', '缺失說明'];
+  const kindName = { before: '修繕前', after: '修繕後' };
+  const photoCols = []; kinds.forEach(k => { const n = Math.max(1, ...rows.map(r => (by[r.id + k] || []).length)); for (let j = 0; j < n; j++) photoCols.push({ kind: k, j }); });
+  const head = textHead.concat(photoCols.map(c => `${kindName[c.kind]}照片${c.j + 1}`));
+  ws.addRow(head); ws.getRow(1).font = { bold: true }; ws.getRow(1).alignment = { vertical: 'middle', wrapText: true };
+  const widths = [6, 8, 6, 8, 10, 14, 28, 20, 20, 8, 12, 12, 24];
+  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? widths[i] : 24 }));
+  const IMG_W = 170, IMG_H = 128;
+  rows.forEach((d, r) => {
+    const row = ws.addRow([d.id, M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id), M.name('spaces', d.space_id), M.name('categories', d.category_id),
+      M.name('items', d.item_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), STATUS[d.status], d.planned_date || '', d.fixed_date || '', d.description || '']);
+    row.alignment = { vertical: 'top', wrapText: true };
+    const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
+    if (has) row.height = IMG_H * 0.75 + 6;
+    photoCols.forEach((c, ci) => {
+      const p = (by[d.id + c.kind] || [])[c.j]; const buf = p && imgs.get(p.id); if (!buf) return;
+      const id = wb.addImage({ buffer: buf, extension: 'jpeg' });
+      ws.addImage(id, { tl: { col: textHead.length + ci + 0.05, row: r + 1 + 0.05 }, ext: { width: IMG_W, height: IMG_H } });
+    });
+  });
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+  const buf = await wb.xlsx.writeBuffer();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const d0 = new Date(); a.download = `品質查驗報表_含照片_${d0.getFullYear()}${pad(d0.getMonth() + 1)}${pad(d0.getDate())}.xlsx`; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  toast(`已匯出 ${rows.length} 筆、${imgs.size} 張照片`);
+});
