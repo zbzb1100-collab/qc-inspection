@@ -102,9 +102,10 @@ function drawPins() {
     const marks = S.m.plan_spaces.filter(m => m.plan_id === pl.id);
     const legend = [];
     marks.forEach(m => {
-      const sp = M.get('spaces', m.space_id); if (!sp || !sp.code || sp.code === '0') return;
-      const d = el('div', 'mark', sp.code); d.style.left = (m.x * 100) + '%'; d.style.top = (m.y * 100) + '%'; plan.appendChild(d);
-      legend.push(`${sp.code}＝${sp.name}`);
+      const sp = M.get('spaces', m.space_id); if (!sp) return;
+      const hasCode = sp.code && sp.code !== '0';
+      const d = el('div', 'mark', hasCode ? sp.code : sp.name); d.style.left = (m.x * 100) + '%'; d.style.top = (m.y * 100) + '%'; plan.appendChild(d);
+      if (hasCode) legend.push(`${sp.code}＝${sp.name}`);
     });
     $('marklegend').textContent = legend.join('　');
   }

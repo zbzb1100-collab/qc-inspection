@@ -20,9 +20,11 @@ function chipEditor(box, o) {
   if (!rows.length) cs.appendChild(el('span', 'hint', '（還沒有項目）'));
   box.appendChild(cs);
   if (selRow) {
-    const ed = el('div', 'inline-add'); const inp = el('input'); inp.type = 'text'; inp.value = selRow.name ?? selRow.code; ed.appendChild(inp);
-    const save = el('button', 'btn ghost small', '改名'); save.onclick = () => guard(save, async () => {
-      const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await o.onSave(selRow, v); await reloadAdmin(); toast('已更新');
+    const ed = el('div', 'inline-add'); const inp = el('input'); inp.type = 'text'; inp.value = selRow.name ?? selRow.code; inp.title = '名稱'; ed.appendChild(inp);
+    let ex = null;
+    if (o.extra) { ex = el('input'); ex.type = 'text'; ex.value = o.extra.get(selRow) || ''; ex.placeholder = o.extra.placeholder || ''; ex.title = o.extra.label; ex.style.flex = '0 0 90px'; ed.appendChild(ex); }
+    const save = el('button', 'btn ghost small', '儲存'); save.onclick = () => guard(save, async () => {
+      const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await o.onSave(selRow, v, ex ? ex.value.trim() : undefined); await reloadAdmin(); toast('已更新');
     });
     const tg = el('button', 'btn ghost small', selRow.active === false ? '啟用' : '停用'); tg.onclick = () => guard(tg, async () => {
       await o.onToggle(selRow); await reloadAdmin(); toast(selRow.active === false ? '已啟用' : '已停用');
@@ -98,14 +100,11 @@ function renderAdmin() {
     g.body.appendChild(el('label', 'f', '檢查類型')); g.body.appendChild(sel);
     const rows = S.m.spaces.filter(s => s.inspect_type_id === adminSel.spType).sort(bySort);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'space', rows, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name,
-      onAdd: async names => {
-        const used = new Set(rows.map(r => r.code)); let i = 0;
-        const rowsNew = names.map((n, k) => { while (used.has(String.fromCharCode(65 + i))) i++; const code = String.fromCharCode(65 + i); used.add(code); return { inspect_type_id: adminSel.spType, name: n, code, sort: nextSort(rows) + k }; });
-        await q(sb.from('spaces').insert(rowsNew));
-      },
-      onSave: (r, v) => q(sb.from('spaces').update({ name: v }).eq('id', r.id)), onToggle: toggleActive('spaces'), placeholder: '新增空間別，例：玄關' });
-    g.body.appendChild(el('p', 'hint', '字母是平面圖上標示的空間編號，新增時自動給下一個字母。')); }
+    chipEditor(box, { key: 'space', rows, label: r => r.name,
+      extra: { label: '圖面代號', get: r => (r.code && r.code !== '0' ? r.code : ''), placeholder: '圖面代號' },
+      onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: adminSel.spType, name: n, code: '', sort: nextSort(rows) + k })))),
+      onSave: (r, v, code) => q(sb.from('spaces').update({ name: v, code: code ?? r.code }).eq('id', r.id)), onToggle: toggleActive('spaces'), placeholder: '新增空間別，例：玄關' });
+    g.body.appendChild(el('p', 'hint', '點一個空間可改名稱；右邊小格是「圖面代號」，只有要在平面圖上標記位置時才需要，可留空。')); }
 
   // 4 工項與缺失內容與廠商對應
   { const g = group('cat', '工項、缺失內容、預設廠商'); root.appendChild(g.d);
@@ -229,9 +228,9 @@ function renderPlanAdmin(root) {
   }
 }
 async function renderMarkEditor(box, plan) {
-  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置，就會在圖上放該空間的字母編號'));
+  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置，就會在圖上放該空間的標記（有圖面代號就顯示代號，沒有就顯示名稱）'));
   const types = M.list('inspect_types'); const t = adminSel.mkType && types.find(x => x.id === adminSel.mkType) ? adminSel.mkType : (types.find(x => x.id === S.sel.typeId) || types[0] || {}).id;
-  const spaces = M.spacesOf(t).filter(s => s.code && s.code !== '0');
+  const spaces = M.spacesOf(t).filter(s => s.name !== '全室');
   const chipsBox = el('div', 'chips'); box.appendChild(chipsBox);
   const wrap = el('div', 'plan'); const img = el('img'); img.alt = '平面圖'; wrap.appendChild(img); box.appendChild(wrap);
   const marks = S.m.plan_spaces.filter(m => m.plan_id === plan.id);
@@ -239,12 +238,12 @@ async function renderMarkEditor(box, plan) {
     wrap.querySelectorAll('.mark').forEach(x => x.remove());
     S.m.plan_spaces.filter(m => m.plan_id === plan.id).forEach(m => {
       const sp = M.get('spaces', m.space_id); if (!sp) return;
-      const d = el('div', 'mark', sp.code); d.style.left = m.x * 100 + '%'; d.style.top = m.y * 100 + '%'; wrap.appendChild(d);
+      const d = el('div', 'mark', sp.code && sp.code !== '0' ? sp.code : sp.name); d.style.left = m.x * 100 + '%'; d.style.top = m.y * 100 + '%'; wrap.appendChild(d);
     });
     chipsBox.innerHTML = '';
     spaces.forEach(s => {
       const has = S.m.plan_spaces.some(m => m.plan_id === plan.id && m.space_id === s.id);
-      const b = el('button', 'chip' + (adminSel.mkSpace === s.id ? ' on' : ''), `${s.code} ${s.name}${has ? ' ✓' : ''}`); b.type = 'button';
+      const b = el('button', 'chip' + (adminSel.mkSpace === s.id ? ' on' : ''), `${s.code && s.code !== '0' ? s.code + ' ' : ''}${s.name}${has ? ' ✓' : ''}`); b.type = 'button';
       b.onclick = () => { adminSel.mkSpace = s.id; draw(); }; chipsBox.appendChild(b);
     });
     const cl = el('button', 'btn ghost small', '移除所選空間的標記'); cl.type = 'button';
