@@ -103,16 +103,33 @@ async function guard(btn, fn) {          // 按鈕處理：防連點、顯示錯
 }
 
 // ---- 私有檔案的暫時網址（登入者才拿得到）----
-const urlCache = new Map();
+const urlCache = new Map();           // key → { url, exp }；網址 8 小時有效，7 小時後重新簽
 async function signedUrls(bucket, paths) {
-  const need = [...new Set(paths.filter(p => p && !urlCache.has(bucket + '/' + p)))];
+  const now = Date.now(); const fresh = p => { const c = urlCache.get(bucket + '/' + p); return c && c.exp > now; };
+  const need = [...new Set(paths.filter(p => p && !fresh(p)))];
   if (need.length) {
     const { data, error } = await sb.storage.from(bucket).createSignedUrls(need, 60 * 60 * 8);
     if (error) throw error;
-    (data || []).forEach(d => { if (d.signedUrl) urlCache.set(bucket + '/' + d.path, d.signedUrl); });
+    (data || []).forEach(d => { if (d.signedUrl) urlCache.set(bucket + '/' + d.path, { url: d.signedUrl, exp: now + 7 * 3600e3 }); });
   }
-  return paths.map(p => urlCache.get(bucket + '/' + p) || '');
+  return paths.map(p => (urlCache.get(bucket + '/' + p) || {}).url || '');
 }
+// 上傳照片後寫資料表；資料表寫入失敗就把剛上傳的檔刪掉，不留孤兒檔
+async function uploadPhoto(defectId, kind, blob) {
+  const path = `${defectId}/${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
+  const up = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' });
+  if (up.error) throw up.error;
+  const ins = await sb.from('defect_photos').insert({ defect_id: defectId, kind, path, created_by: S.user.id }).select().single();
+  if (ins.error) { await sb.storage.from('photos').remove([path]); throw ins.error; }
+  return ins.data;
+}
+// 刪雲端檔案；失敗只提示，不擋主要動作
+async function removeFiles(bucket, paths) {
+  if (!paths.length) return;
+  const { error } = await sb.storage.from(bucket).remove(paths);
+  if (error) { console.warn(error); toast('資料已刪除，但雲端檔案沒刪乾淨（不影響使用）'); }
+}
+const PHOTO_PICK_MAX = 20, PHOTO_FILE_MAX = 40 * 1024 * 1024;
 const signedUrl = async (bucket, path) => (await signedUrls(bucket, [path]))[0];
 
 // ---- 照片壓縮（長邊 1280px、JPEG）----

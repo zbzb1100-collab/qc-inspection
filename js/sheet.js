@@ -34,7 +34,7 @@ function paintSheet() {
   $('sh-title').textContent = isNew ? '新增缺失' : '缺失內容';
   $('sh-where').textContent = `${bName} ${cur.floor} ${uCode}　${M.name('inspect_types', cur.inspect_type_id)}` +
     (cur.x != null ? '　已標在平面圖上' : '　未標位置');
-  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace;
+  const canPlace = !isNew && ctx.canPlace && !!ctx.onPlace && !(cur.status === 'closed' && !isAdmin());
   $('sh-placerow').hidden = !canPlace;
   $('sh-place').textContent = cur.x != null ? '📍 重新標位置' : '📍 在平面圖上標位置';
   $('sh-unplace').hidden = cur.x == null;
@@ -57,6 +57,7 @@ function paintSheet() {
   $('sh-closeinfo').textContent = st2 === 'closed'
     ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}`
     : (st2 === 'fixed' ? '廠商已修繕，等複驗。複驗合格就按②結案；不合格按「退回待修」。' : '修好後拍「修繕後照片」，再按①。');
+  $('sh-save').hidden = st2 === 'closed' && !isAdmin();   // 已結案只有管理者能改（資料庫也會擋）
   $('sh-del').hidden = isNew || !isAdmin(); $('sh-del').textContent = '刪除';
   $('sh-trail').textContent = isNew ? '' :
     `建立：${M.userName(cur.created_by)} ${fmtTime(cur.created_at)}　最後修改：${M.userName(cur.updated_by) || M.userName(cur.created_by)} ${fmtTime(cur.updated_at)}` +
@@ -114,7 +115,10 @@ function photoBox(box, arr, kind) {
   const lab = el('label'); lab.innerHTML = kind === 'after' ? '＋拍照<br>修繕後' : '＋拍照<br>或選圖';
   const inp = el('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
   inp.onchange = async () => {
-    const files = [...inp.files]; inp.value = '';
+    let files = [...inp.files]; inp.value = '';
+    if (files.length > PHOTO_PICK_MAX) { toast(`一次最多選 ${PHOTO_PICK_MAX} 張，已取前 ${PHOTO_PICK_MAX} 張`); files = files.slice(0, PHOTO_PICK_MAX); }
+    const big = files.filter(f => f.size > PHOTO_FILE_MAX || (f.type && !f.type.startsWith('image/')));
+    if (big.length) { toast(`${big.length} 個檔案太大或不是照片，已略過`); files = files.filter(f => !big.includes(f)); }
     for (const f of files) {
       try { const blob = await compressImage(f); arr.push({ blob, url: URL.createObjectURL(blob) }); }
       catch (e) { toast(errMsg(e)); }
@@ -146,34 +150,33 @@ async function persist(needFull = true) {
     Object.assign(cur, data);
     ctx.no = ctx.no || data.id;
   } else {
-    const { error } = await sb.from('defects').update(f).eq('id', cur.id);
+    const { data, error } = await sb.from('defects').update(f).eq('id', cur.id).eq('updated_at', cur.updated_at).select();
     if (error) throw error;
+    if (!data.length) throw new Error('這筆剛剛被別人修改過，請按「取消」關閉後重新打開再改');
+    Object.assign(cur, data[0]);
   }
   if (cur.customer_name) { try { sessionStorage.setItem('qc-cust-' + cur.unit_id, cur.customer_name); } catch (e) { /* ignore */ } }
   // 刪除被移除的照片
   for (const p of cur.removed.slice()) {
     const { error } = await sb.from('defect_photos').delete().eq('id', p.id); if (error) throw error;
-    await sb.storage.from('photos').remove([p.path]);
+    await removeFiles('photos', [p.path]);
     cur.removed.splice(cur.removed.indexOf(p), 1);
   }
   // 上傳新照片
   for (const [arr, kind] of [[cur.before, 'before'], [cur.after, 'after']]) {
     for (const p of arr) {
       if (!p.blob) continue;
-      const path = `${cur.id}/${kind}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
-      const up = await sb.storage.from('photos').upload(path, p.blob, { contentType: 'image/jpeg' });
-      if (up.error) throw up.error;
-      const ins = await sb.from('defect_photos').insert({ defect_id: cur.id, kind, path, created_by: S.user.id }).select().single();
-      if (ins.error) throw ins.error;
+      const row = await uploadPhoto(cur.id, kind, p.blob);
       URL.revokeObjectURL(p.url);
-      p.url = await signedUrl('photos', path); p.id = ins.data.id; p.path = path; p.by = S.user.id; delete p.blob;
+      p.url = await signedUrl('photos', row.path); p.id = row.id; p.path = row.path; p.by = S.user.id; delete p.blob;
     }
   }
 }
 async function setStatus(patch) {
-  const { data, error } = await sb.from('defects').update(patch).eq('id', cur.id).select().single();
+  const { data, error } = await sb.from('defects').update(patch).eq('id', cur.id).eq('updated_at', cur.updated_at).select();
   if (error) throw error;
-  Object.assign(cur, data);
+  if (!data.length) throw new Error('這筆剛剛被別人修改過，請按「取消」關閉後重新打開');
+  Object.assign(cur, data[0]);
 }
 function done(msg) { toast(msg); const cb = ctx.onDone; closeSheet(); if (cb) cb(); }
 
@@ -218,7 +221,7 @@ $('sh-del').onclick = e => {
     const paths = [...cur.before, ...cur.after].filter(p => p.path).map(p => p.path);
     const { error } = await sb.from('defects').delete().eq('id', cur.id);
     if (error) throw error;
-    if (paths.length) await sb.storage.from('photos').remove(paths);
+    await removeFiles('photos', paths);
     done('已刪除');
   });
 };

@@ -115,6 +115,7 @@ function xlStage(label, table, rows, o) {
     } catch (e) { res.warns.push(where + '：' + e.message); }
   });
   res.removes = [];
+  if (xlSync && o.scope && rows && !rows.length) res.emptySkip = true;   // 整張表清空：為安全起見不當成「全部刪除」
   if (xlSync && o.scope && (rows || []).length) {
     if (res.warns.length) res.skipSync = true;       // 這張表有問題列，為安全起見這次不處理刪除
     else res.removes = o.scope().filter(x => !seen.has(x.k)).map(x => ({ match: { id: x.ex.id }, nm: x.nm, used: o.used(x.ex), off: x.ex.active === false }))
@@ -281,6 +282,7 @@ function renderExcelAdmin(root) {
           box.appendChild(el('div', 'hint', `預估：刪除 ${del}、停用 ${off} → ${names}`));
         }
         if (p.skipSync) box.appendChild(el('div', 'hint', '⚠ 這張表有看不懂的列，這次不處理刪除'));
+        if (p.emptySkip) box.appendChild(el('div', 'hint', '這張表是空的，完整同步不會因此刪除或停用任何項目（要清掉請在後台逐項停用）'));
         p.warns.forEach(w => { const wr = el('div', 'hint', '⚠ ' + w); wr.style.color = 'var(--danger, #c0392b)'; box.appendChild(wr); });
       });
       out.appendChild(box);

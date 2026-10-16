@@ -258,8 +258,9 @@ async function uploadPlan(unit, variant, file) {
   if (up.error) throw up.error;
   const old = S.m.plans.find(p => p.unit_id === unit.id && p.variant === variant);
   if (old) {
-    await q(sb.from('plans').update({ path }).eq('id', old.id));
-    await sb.storage.from('plans').remove([old.path]);
+    const { error } = await sb.from('plans').update({ path }).eq('id', old.id);
+    if (error) { await sb.storage.from('plans').remove([path]); throw error; }
+    await removeFiles('plans', [old.path]);
   } else {
     const { error } = await sb.from('plans').insert({ unit_id: unit.id, variant, path });
     if (error) { await sb.storage.from('plans').remove([path]); if (/check constraint|plans_variant/i.test(error.message)) throw new Error('要先到 Supabase 執行 4_樓層專屬圖.sql 一次，才能上傳各樓層專屬圖。'); throw error; }
@@ -282,7 +283,8 @@ function renderPlanAdmin(root) {
       if (!m) { st.textContent = '檔名看不懂'; continue; }
       const hits = units.filter(u => u.code.toUpperCase() === m[1].toUpperCase());
       if (!hits.length) { st.textContent = `找不到戶別 ${m[1]}`; continue; }
-      try { await uploadPlan(hits[0], m[2] ? m[2].toUpperCase() : '標準層', f); st.textContent = '完成' + (hits.length > 1 ? '（有多棟同名戶別，放在第一個）' : ''); st.classList.add('ok'); okN++; }
+      if (hits.length > 1) { st.textContent = `有 ${hits.length} 棟都叫 ${m[1]}，請到下方該戶個別上傳`; continue; }
+      try { await uploadPlan(hits[0], m[2] ? m[2].toUpperCase() : '標準層', f); st.textContent = '完成'; st.classList.add('ok'); okN++; }
       catch (e) { st.textContent = '失敗：' + errMsg(e); }
     }
     await loadMaster(); toast(`成功 ${okN} / ${files.length} 張`); renderAdmin();

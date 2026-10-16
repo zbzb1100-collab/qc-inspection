@@ -118,9 +118,7 @@ function renderImportAdmin(root) {
         if (error) throw new Error(`第 ${list.indexOf(o) + 2} 列：` + errMsg(error) + `（前 ${n} 筆已匯入）`);
         for (const z of o.photoFiles) {
           const blob = await compressImage(await z.async('blob'));
-          const path = `${data.id}/before_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
-          const up = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg' }); if (up.error) throw up.error;
-          const ins = await sb.from('defect_photos').insert({ defect_id: data.id, kind: 'before', path, created_by: S.user.id }); if (ins.error) throw ins.error;
+          await uploadPhoto(data.id, 'before', blob);
           np++;
         }
         o.on = false; o.done = true; n++; log.textContent = `匯入中… ${n}／${rows.length} 筆，照片 ${np} 張`;
