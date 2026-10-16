@@ -133,7 +133,7 @@ await ud.locator('button.chip:text-is("A1")').click();
 await ud.locator('label:has-text("有哪些空間") + .chips button.chip:has-text("前陽台")').click(); await page.waitForTimeout(300);
 await ud.locator('label:has-text("有哪些空間") + .chips button.chip:has-text("客餐廳")').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.unit_spaces.map(m => m.unit_id + ':' + m.space_id).sort().join())) === '1:2,1:3', '點選空間＝這戶有此空間');
-ok((await page.evaluate(() => M.spacesFor(1, '3F').map(s => s.name).join())) === '全室,客餐廳,前陽台', '填寫只出現這戶的空間（含全室）');
+ok((await page.evaluate(() => M.spacesFor(1, '3F').map(s => s.name).join())) === '客餐廳,前陽台', '填寫只出現這戶勾選的空間');
 ok((await page.evaluate(() => M.spacesFor(99, '3F').length)) === await page.evaluate(() => M.list('spaces').length), '沒設定的戶顯示全部空間');
 await ud.locator('select').first().selectOption({ label: 'A1（2 個空間）' }).catch(() => {});
 await ud.locator('button:has-text("套用到同棟全部戶別")').click(); await ud.locator('button:has-text("確定覆蓋")').click(); await page.waitForTimeout(400);

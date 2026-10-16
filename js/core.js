@@ -47,8 +47,9 @@ const M = {
   // 空間別是一份總清單；每戶設定了哪些空間，填寫時就只出現那些（＋全室）。這戶沒設定時，改看平面圖標記；都沒有就全部顯示。
   spacesFor: (unitId, floor, keepId) => {
     const all = M.list('spaces'); const plan = typeof pickPlan === 'function' ? pickPlan(unitId, floor) : null;
-    let ids = new Set(S.m.unit_spaces.filter(m => m.unit_id === unitId).map(m => m.space_id));
-    if (!ids.size) ids = new Set(plan ? S.m.plan_spaces.filter(m => m.plan_id === plan.id).map(m => m.space_id) : []);
+    const bound = new Set(S.m.unit_spaces.filter(m => m.unit_id === unitId).map(m => m.space_id));
+    if (bound.size) return all.filter(sp => bound.has(sp.id) || sp.id === keepId);         // 這戶有設定：只出現勾選的
+    const ids = new Set(plan ? S.m.plan_spaces.filter(m => m.plan_id === plan.id).map(m => m.space_id) : []);
     if (!ids.size) return all;
     return all.filter(sp => ids.has(sp.id) || sp.name === '全室' || sp.id === keepId);
   },

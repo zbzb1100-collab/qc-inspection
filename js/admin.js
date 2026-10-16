@@ -17,7 +17,7 @@ function unitSpacesEditor(body, u) {
   box.appendChild(el('label', 'f', `${u.code} 有哪些空間（點選＝有；全部不選＝填寫時顯示全部）`));
   const cs = el('div', 'chips'); box.appendChild(cs);
   const have = new Set(mine());
-  M.list('spaces').filter(sp => sp.name !== '全室').forEach(sp => {
+  M.list('spaces').forEach(sp => {
     const b = el('button', 'chip' + (have.has(sp.id) ? ' on' : ''), (sp.code && sp.code !== '0' ? sp.code + ' ' : '') + sp.name); b.type = 'button';
     b.onclick = () => guard(b, async () => {
       if (have.has(sp.id)) await q(sb.from('unit_spaces').delete().eq('unit_id', u.id).eq('space_id', sp.id));
