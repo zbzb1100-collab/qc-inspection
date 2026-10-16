@@ -108,6 +108,8 @@ function chipEditor(box, o) {
   const ad = el('div', 'inline-add'); const ai = el('input'); ai.type = 'text'; ai.placeholder = o.placeholder || '新增…（可用「、」一次輸入多個）'; ad.appendChild(ai);
   const ab = el('button', 'btn small', '新增'); ab.onclick = () => guard(ab, async () => {
     const names = splitNames(ai.value); if (!names.length) throw new Error('請先輸入名稱');
+    const dup = names.filter(n => rows.some(r => String(r[nameField] ?? '') === n));
+    if (dup.length) throw new Error('「' + dup.join('、') + '」已經有了' + (rows.some(r => r.active === false && dup.includes(String(r[nameField]))) ? '（在「已停用」裡，按「顯示已停用」再啟用）' : '，不用重複新增'));
     await o.onAdd(names); await reloadAdmin(); toast(`已新增 ${names.length} 筆`);
   });
   ad.appendChild(ab); box.appendChild(ad);

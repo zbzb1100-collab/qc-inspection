@@ -89,6 +89,7 @@ function errMsg(e) {
   const m = (e && (e.message || e.error_description)) || String(e);
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return '連不上雲端，請確認網路。';
   if (/row-level security|permission denied/i.test(m)) return '沒有這個操作的權限。';
+  if (/duplicate key|unique constraint/i.test(m)) return '已經有同名的項目了（可能在「已停用」裡）。';
   return m;
 }
 async function guard(btn, fn) {          // 按鈕處理：防連點、顯示錯誤
