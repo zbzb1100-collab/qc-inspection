@@ -167,3 +167,82 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   toast(`已匯出 ${rows.length} 筆、${imgs.size} 張照片`);
 });
+
+// ---------- 匯出 PDF（用瀏覽器列印，目的地選「另存為 PDF」）----------
+function filterSummary() {
+  const parts = [];
+  const add = (label, v) => { if (v) parts.push(`${label}：${v}`); };
+  add('檢查類型', RF.itype && M.name('inspect_types', Number(RF.itype)));
+  add('棟別', RF.bld && M.name('buildings', Number(RF.bld)));
+  add('樓層', RF.floor);
+  add('戶別', RF.unit && M.unitCode(Number(RF.unit)));
+  add('工項', RF.cat && M.name('categories', Number(RF.cat)));
+  add('狀態', RF.status && STATUS[RF.status]);
+  add('修繕廠商', RF.fixv && M.name('vendors', Number(RF.fixv)));
+  add('責任廠商', RF.respv && M.name('vendors', Number(RF.respv)));
+  return parts.length ? parts.join('　') : '全部資料';
+}
+function printNow(landscape) {
+  let st = $('print-page'); if (!st) { st = el('style'); st.id = 'print-page'; document.head.appendChild(st); }
+  st.textContent = `@page{size:A4 ${landscape ? 'landscape' : 'portrait'};margin:12mm}`;
+  const root = $('print-root');
+  window.onafterprint = () => { root.innerHTML = ''; window.onafterprint = null; };
+  window.print();
+}
+function printHead(root, title, n) {
+  root.innerHTML = '';
+  root.appendChild(el('h1', null, title));
+  root.appendChild(el('div', 'pmeta', `${fmtTime(new Date().toISOString())}　共 ${n} 筆　篩選：${filterSummary()}`));
+}
+$('f-pdf').onclick = e => guard(e.currentTarget, async () => {
+  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
+  const root = $('print-root'); const rows = reportRows.slice().sort((a, b) => a.id - b.id);
+  printHead(root, '品質查驗報表', rows.length);
+  const t = el('table'); const th = el('thead'); const hr = el('tr');
+  ['編號', '戶', '空間', '工項', '缺失內容', '修繕廠商', '責任廠商', '預計／實際修繕', '狀態', '缺失說明'].forEach(h => hr.appendChild(el('th', null, h)));
+  th.appendChild(hr); t.appendChild(th); const tb = el('tbody');
+  rows.forEach(d => {
+    const tr = el('tr');
+    [d.id, `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`, M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
+      M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), `${d.planned_date || '—'}\n${d.fixed_date || '—'}`, STATUS[d.status] + (d.close_type ? `（${d.close_type}）` : ''), d.description || ''
+    ].forEach(v => { const td = el('td', null, String(v)); td.style.whiteSpace = 'pre-line'; tr.appendChild(td); });
+    tb.appendChild(tr);
+  });
+  t.appendChild(tb); root.appendChild(t);
+  printNow(true);
+});
+$('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
+  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
+  const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
+  if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
+  const rows = reportRows.slice().sort((a, b) => a.id - b.id);
+  if (rows.length > 150) throw new Error(`含照片的 PDF 一次最多 150 筆，目前有 ${rows.length} 筆，請先縮小篩選條件（例如先選棟別或樓層）。`);
+  const ids = rows.map(r => r.id); let photos = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data, error } = await sb.from('defect_photos').select('id,defect_id,kind,path').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
+    if (error) throw error; photos = photos.concat(data);
+  }
+  const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; const a = (by[k] = by[k] || []); if (a.length < 4) a.push(p); });
+  const use = Object.values(by).flat();
+  const urls = await signedUrls('photos', use.map(p => p.path)); const url = new Map(use.map((p, i) => [p.id, urls[i]]));
+  const root = $('print-root'); printHead(root, '品質查驗報表（含照片）', rows.length);
+  const imgs = [];
+  rows.forEach(d => {
+    const c = el('div', 'card');
+    c.appendChild(el('div', 'h', `#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${STATUS[d.status]}${d.close_type ? '・' + d.close_type : ''}］`));
+    c.appendChild(el('div', null, `${M.name('categories', d.category_id)}　${M.name('items', d.item_id)}`));
+    c.appendChild(el('div', 's', `修繕廠商：${M.name('vendors', d.fix_vendor_id) || '—'}　責任廠商：${M.name('vendors', d.resp_vendor_id) || '—'}　預計：${d.planned_date || '—'}　實際：${d.fixed_date || '—'}`));
+    if (d.description) c.appendChild(el('div', 's', '說明：' + d.description));
+    if (d.close_reason) c.appendChild(el('div', 's', '不修原因：' + d.close_reason));
+    const ph = el('div', 'ph');
+    kinds.forEach(k => (by[d.id + k] || []).forEach((p, j) => {
+      const f = el('figure'); const im = el('img'); im.alt = ''; imgs.push(im); im.src = url.get(p.id);
+      f.append(im, el('figcaption', null, `${k === 'before' ? '修繕前' : '修繕後'} ${j + 1}`)); ph.appendChild(f);
+    }));
+    if (ph.children.length) c.appendChild(ph);
+    root.appendChild(c);
+  });
+  toast('整理照片中…');
+  await Promise.all(imgs.map(im => new Promise(res => { if (im.complete) res(); else { im.onload = im.onerror = res; setTimeout(res, 15000); } })));
+  printNow(false);
+});

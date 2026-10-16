@@ -155,3 +155,25 @@ table{font-size:15px}th{font-size:14px}
 input,select,textarea,button{font-size:inherit}
 input[type=text],input[type=number],input[type=email],input[type=password],input[type=date],select,textarea{font-size:17px}
 summary{font-size:18px}
+
+/* ---- 列印／匯出 PDF ---- */
+#print-root{display:none}
+@media print{
+  html,body{background:#fff!important;color:#000!important;height:auto!important;display:block!important;font-size:11pt}
+  body>*:not(#print-root){display:none!important}
+  #print-root{display:block!important;color:#000;background:#fff;font-family:var(--font)}
+  #print-root h1{font-size:18pt;margin:0 0 4pt}
+  #print-root .pmeta{font-size:10pt;color:#333;margin-bottom:8pt}
+  #print-root table{width:100%;border-collapse:collapse;font-size:9.5pt}
+  #print-root th,#print-root td{border:1px solid #999;padding:3pt 5pt;vertical-align:top;text-align:left;color:#000}
+  #print-root th{background:#e8e8e8}
+  #print-root thead{display:table-header-group}
+  #print-root tr{break-inside:avoid}
+  #print-root .card{border:1px solid #888;border-radius:4pt;padding:6pt 8pt;margin:0 0 8pt;break-inside:avoid;font-size:10pt}
+  #print-root .card .h{font-weight:700;font-size:11pt;margin-bottom:2pt}
+  #print-root .card .s{color:#333;margin-bottom:2pt}
+  #print-root .ph{display:flex;gap:8pt;flex-wrap:wrap;margin-top:4pt}
+  #print-root .ph figure{margin:0;width:48%}
+  #print-root .ph img{width:100%;max-height:7cm;object-fit:contain;border:1px solid #bbb}
+  #print-root .ph figcaption{font-size:9pt;color:#444}
+}

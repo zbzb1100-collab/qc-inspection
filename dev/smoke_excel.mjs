@@ -155,5 +155,16 @@ const [dp2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 
 await dp2.saveAs('/tmp/claude-0/xl/photo2.xlsx');
 const hd2 = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/photo2.xlsx').Sheets['缺失清單（含照片）'], { header: 1 })[0];
 ok(hd2.includes('修繕前照片1') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
+
+// ---- PDF（列印版面）----
+await page.evaluate(() => { window.print = () => { window.__printSnap = document.getElementById('print-root').innerHTML; window.__printed = (window.__printed || 0) + 1; }; });
+await page.click('#f-pdf'); await page.waitForTimeout(300);
+ok(await page.evaluate(() => window.__printed === 1 && window.__printSnap.includes('<table') && window.__printSnap.includes('品質查驗報表')), 'PDF（文字）：產生表格版面並呼叫列印');
+await page.check('#f-ph-after');
+await page.click('#f-pdf-photo'); await page.waitForTimeout(800);
+ok(await page.evaluate(() => window.__printed === 2 && (window.__printSnap.match(/<img/g) || []).length === 3 && window.__printSnap.includes('修繕後 1')), 'PDF（含照片）：每筆缺失一張卡片，3 張照片都在');
+await page.uncheck('#f-ph-before'); await page.click('#f-pdf-photo'); await page.waitForTimeout(800);
+ok(await page.evaluate(() => (window.__printSnap.match(/<img/g) || []).length === 1 && !window.__printSnap.includes('修繕前 1')), 'PDF：取消勾選修繕前就不附修繕前照片');
+await page.evaluate(() => { document.getElementById('print-root').innerHTML = ''; });
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);
