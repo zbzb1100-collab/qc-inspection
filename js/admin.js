@@ -6,11 +6,13 @@ const nextSort = rows => rows.reduce((m, r) => Math.max(m, r.sort ?? 0), 0) + 1;
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
 async function reloadAdmin() { await loadMaster(); renderAdmin(); }
 
-// 通用「點選 → 改名／停用／啟用」清單編輯器
+// 通用清單編輯器：點選 → 改名／排序／停用／刪除
+// o = { key, table, rows, label, onAdd, placeholder, nameField?('name'|'code'), sortable?(預設 true), onSelect? }
 function chipEditor(box, o) {
   box.innerHTML = '';
   const rows = o.rows; const selId = adminSel[o.key];
   const selRow = rows.find(r => r.id === selId) || null;
+  const nameField = o.nameField || 'name'; const sortable = o.sortable !== false;
   const cs = el('div', 'chips');
   rows.forEach(r => {
     const b = el('button', 'chip' + (r.active === false ? ' off' : '') + (selRow && selRow.id === r.id ? ' sel' : ''), o.label(r));
@@ -20,17 +22,31 @@ function chipEditor(box, o) {
   if (!rows.length) cs.appendChild(el('span', 'hint', '（還沒有項目）'));
   box.appendChild(cs);
   if (selRow) {
-    const ed = el('div', 'inline-add'); const inp = el('input'); inp.type = 'text'; inp.value = selRow.name ?? selRow.code; inp.title = '名稱'; ed.appendChild(inp);
-    let ex = null;
-    if (o.extra) { ex = el('input'); ex.type = 'text'; ex.value = o.extra.get(selRow) || ''; ex.placeholder = o.extra.placeholder || ''; ex.title = o.extra.label; ex.style.flex = '0 0 90px'; ed.appendChild(ex); }
+    const ed = el('div', 'inline-add');
+    const inp = el('input'); inp.type = 'text'; inp.value = selRow[nameField] ?? ''; inp.title = '名稱'; ed.appendChild(inp);
+    let so = null;
+    if (sortable) { so = el('input'); so.type = 'number'; so.value = selRow.sort ?? 0; so.title = '排序'; so.placeholder = '排序'; so.style.flex = '0 0 72px'; ed.appendChild(so); }
     const save = el('button', 'btn ghost small', '儲存'); save.onclick = () => guard(save, async () => {
-      const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await o.onSave(selRow, v, ex ? ex.value.trim() : undefined); await reloadAdmin(); toast('已更新');
+      const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白');
+      const patch = { [nameField]: v }; if (so) patch.sort = Number(so.value) || 0;
+      await q(sb.from(o.table).update(patch).eq('id', selRow.id)); await reloadAdmin(); toast('已更新');
     });
     const tg = el('button', 'btn ghost small', selRow.active === false ? '啟用' : '停用'); tg.onclick = () => guard(tg, async () => {
-      await o.onToggle(selRow); await reloadAdmin(); toast(selRow.active === false ? '已啟用' : '已停用');
+      await q(sb.from(o.table).update({ active: selRow.active === false }).eq('id', selRow.id)); await reloadAdmin(); toast(selRow.active === false ? '已啟用' : '已停用');
     });
-    ed.appendChild(save); ed.appendChild(tg); box.appendChild(ed);
-    box.appendChild(el('p', 'hint', '停用＝新的填寫不會再出現，但舊紀錄保留；可隨時再啟用。'));
+    const del = el('button', 'btn danger small', '刪除'); del.onclick = () => {
+      if (!del.dataset.arm) { del.dataset.arm = '1'; del.textContent = '確定刪除？'; setTimeout(() => { delete del.dataset.arm; del.textContent = '刪除'; }, 4000); return; }
+      guard(del, async () => {
+        const { error } = await sb.from(o.table).delete().eq('id', selRow.id);
+        if (error) {
+          if (error.code === '23503' || /foreign key|violates/i.test(error.message)) throw new Error('「' + o.label(selRow) + '」已有缺失紀錄或下層資料在使用，不能刪除；請改用「停用」。');
+          throw error;
+        }
+        adminSel[o.key] = null; await reloadAdmin(); toast('已刪除');
+      });
+    };
+    ed.append(save, tg, del); box.appendChild(ed);
+    box.appendChild(el('p', 'hint', (sortable ? '排序：數字小的排前面。' : '') + '停用＝填寫時不再出現但保留舊紀錄；刪除＝只有從未被使用的項目能刪。'));
   }
   const ad = el('div', 'inline-add'); const ai = el('input'); ai.type = 'text'; ai.placeholder = o.placeholder || '新增…（可用「、」一次輸入多個）'; ad.appendChild(ai);
   const ab = el('button', 'btn small', '新增'); ab.onclick = () => guard(ab, async () => {
@@ -48,8 +64,6 @@ function group(key, title, sub) {
   const body = el('div', 'stack'); body.style.marginTop = '10px'; d.appendChild(body);
   return { d, body };
 }
-const toggleActive = t => r => q(sb.from(t).update({ active: r.active === false }).eq('id', r.id));
-const rename = t => (r, v) => q(sb.from(t).update(r.code != null && r.name == null ? { code: v } : { name: v }).eq('id', r.id));
 
 function renderAdmin() {
   const root = $('admin-root'); root.innerHTML = '';
@@ -59,9 +73,9 @@ function renderAdmin() {
   // 1 棟別與樓層
   { const g = group('bld', '棟別與樓層'); root.appendChild(g.d);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'bld', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId), label: r => r.name,
+    chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId), label: r => r.name,
       onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i })))),
-      onSave: rename('buildings'), onToggle: toggleActive('buildings'), placeholder: '新增棟別，例：G棟' });
+      placeholder: '新增棟別，例：G棟' });
     const b = M.get('buildings', adminSel.bld);
     if (b) {
       const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
@@ -88,9 +102,9 @@ function renderAdmin() {
     const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
     g.body.appendChild(sel);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'unit', rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
+    chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
       onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i })))),
-      onSave: rename('units'), onToggle: toggleActive('units'), placeholder: '新增戶別，例：A9' }); }
+      placeholder: '新增戶別，例：A9' }); }
 
   // 3 空間別
   { const g = group('space', '空間別'); root.appendChild(g.d);
@@ -100,26 +114,24 @@ function renderAdmin() {
     g.body.appendChild(el('label', 'f', '檢查類型')); g.body.appendChild(sel);
     const rows = S.m.spaces.filter(s => s.inspect_type_id === adminSel.spType).sort(bySort);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'space', rows, label: r => r.name,
-      extra: { label: '圖面代號', get: r => (r.code && r.code !== '0' ? r.code : ''), placeholder: '圖面代號' },
+    chipEditor(box, { key: 'space', table: 'spaces', rows, label: r => r.name,
       onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: adminSel.spType, name: n, code: '', sort: nextSort(rows) + k })))),
-      onSave: (r, v, code) => q(sb.from('spaces').update({ name: v, code: code ?? r.code }).eq('id', r.id)), onToggle: toggleActive('spaces'), placeholder: '新增空間別，例：玄關' });
-    g.body.appendChild(el('p', 'hint', '點一個空間可改名稱；右邊小格是「圖面代號」，只有要在平面圖上標記位置時才需要，可留空。')); }
+      placeholder: '新增空間別，例：玄關' }); }
 
   // 4 工項與缺失內容與廠商對應
   { const g = group('cat', '工項、缺失內容、預設廠商'); root.appendChild(g.d);
     g.body.appendChild(el('label', 'f', '① 工項（點一個來編輯它的缺失內容與廠商）'));
     const cbox = el('div', 'stack'); g.body.appendChild(cbox);
-    chipEditor(cbox, { key: 'cat', onSelect: () => renderAdmin(), rows: M.list('categories', false), label: r => r.name,
+    chipEditor(cbox, { key: 'cat', table: 'categories', onSelect: () => renderAdmin(), rows: M.list('categories', false), label: r => r.name,
       onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i })))),
-      onSave: rename('categories'), onToggle: toggleActive('categories'), placeholder: '新增工項，例：20木地板' });
+      placeholder: '新增工項，例：20木地板' });
     const c = M.get('categories', adminSel.cat);
     if (c) {
       g.body.appendChild(el('label', 'f', `② ${c.name} 的缺失內容`));
       const ibox = el('div', 'stack'); g.body.appendChild(ibox);
-      chipEditor(ibox, { key: 'item', rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
+      chipEditor(ibox, { key: 'item', table: 'items', rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
         onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i })))),
-        onSave: rename('items'), onToggle: toggleActive('items'), placeholder: '新增缺失內容' });
+        placeholder: '新增缺失內容' });
       g.body.appendChild(el('label', 'f', `③ ${c.name} 的預設廠商（點選＝加入／移除；可多家）`));
       const vb = el('div', 'chips'); g.body.appendChild(vb);
       const mapped = new Set(S.m.category_vendors.filter(x => x.category_id === c.id).map(x => x.vendor_id));
@@ -138,17 +150,17 @@ function renderAdmin() {
 
   // 5 廠商
   { const g = group('vendor', '廠商'); root.appendChild(g.d); const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'vendor', rows: M.list('vendors', false), label: r => r.name,
+    chipEditor(box, { key: 'vendor', table: 'vendors', sortable: false, rows: M.list('vendors', false), label: r => r.name,
       onAdd: names => q(sb.from('vendors').insert(names.map(n => ({ name: n })))),
-      onSave: rename('vendors'), onToggle: toggleActive('vendors'), placeholder: '新增廠商全名' }); }
+      placeholder: '新增廠商全名' }); }
 
   // 6 其他清單
   { const g = group('misc', '其他清單', '修繕方式、檢查類型、案場'); root.appendChild(g.d);
     [['repair_methods', '修繕方式'], ['inspect_types', '檢查類型'], ['sites', '案場']].forEach(([t, title]) => {
       g.body.appendChild(el('label', 'f', title)); const box = el('div', 'stack'); g.body.appendChild(box);
-      chipEditor(box, { key: t, rows: M.list(t, false), label: r => r.name,
+      chipEditor(box, { key: t, table: t, rows: M.list(t, false), label: r => r.name,
         onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i })))),
-        onSave: rename(t), onToggle: toggleActive(t), placeholder: '新增' + title });
+        placeholder: '新增' + title });
     }); }
 
   // 7 平面圖

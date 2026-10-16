@@ -152,11 +152,25 @@ await page.locator("summary", { hasText: /^廠商$/ }).click();
 await page.locator('details:has(summary:text-is("廠商")) .inline-add input').last().fill('新廠商、第二廠商');
 await page.locator('details:has(summary:text-is("廠商")) .inline-add button:has-text("新增")').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.vendors.length)) === 5, '一次新增多個廠商');
+await page.locator('details:has(summary:text-is("廠商")) .chip:text-is("第二廠商")').click();
+await page.locator('details:has(summary:text-is("廠商")) button:has-text("刪除")').click();
+await page.locator('details:has(summary:text-is("廠商")) button:has-text("確定刪除")').click(); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.vendors.length)) === 4, '刪除需按兩次確認，刪掉未使用的廠商');
+await page.locator('details:has(summary:text-is("廠商")) .chip:text-is("新廠商")').click();
+await page.locator('details:has(summary:text-is("廠商")) .inline-add input[type=text]').first().fill('新廠商改名');
+await page.locator('details:has(summary:text-is("廠商")) button:has-text("儲存")').click(); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.vendors.some(v => v.name === '新廠商改名'))), '改名');
 // 工項：把新廠商掛到油漆
 await page.locator('summary:has-text("工項、缺失內容")').click();
 await page.locator('details:has(summary:has-text("工項、缺失內容")) .chip:text-is("10油漆")').click();
-await page.locator('details:has(summary:has-text("工項、缺失內容")) .chips button.chip:text-is("新廠商")').click(); await page.waitForTimeout(300);
+await page.locator('details:has(summary:has-text("工項、缺失內容")) .chips button.chip:text-is("新廠商改名")').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.category_vendors.filter(x => x.category_id === 2).length)) === 2, '工項可加掛第二家預設廠商');
+// 排序：把前陽台排序改 -1，填寫頁應排第一
+await page.evaluate(() => { document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('空間別')) d.open = true; }); });
+await page.locator('details:has(summary:has-text("空間別")) .chip:text-is("前陽台")').click();
+await page.locator('details:has(summary:has-text("空間別")) input[type=number]').first().fill('-1');
+await page.locator('details:has(summary:has-text("空間別")) button:has-text("儲存")').first().click(); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.spaces.find(s => s.name === '前陽台').sort)) === -1, '排序數字可改');
 // 樓層
 await page.evaluate(() => { document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('棟別與樓層')) d.open = true; }); });
 await page.locator('details:has(summary:has-text("棟別與樓層")) .chip:text-is("A棟")').click();
