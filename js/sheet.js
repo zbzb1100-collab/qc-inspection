@@ -64,6 +64,18 @@ function paintSheet() {
     (cur.closed_at ? `　結案：${M.userName(cur.closed_by)} ${fmtTime(cur.closed_at)}` : '');
   paintVendorMode();
   paintPhotos();
+  paintMini();
+}
+// 表單上方的小平面圖：標出這筆缺失的位置（從報表點進來也看得到）
+async function paintMini() {
+  const box = $('sh-mini'); const me = cur; box.querySelectorAll('.pin').forEach(p => p.remove());
+  const plan = cur.plan_id != null && cur.x != null && S.m.plans.find(p => p.id === cur.plan_id);
+  box.hidden = !plan; if (!plan) return;
+  const url = await signedUrl('plans', plan.path).catch(() => '');
+  if (me !== cur) return;
+  $('sh-miniimg').src = url;
+  const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
+  box.appendChild(pin);
 }
 // 廠商帳號：缺失內容只能看；只能填修繕完成日、拍修繕後照片、按①
 function paintVendorMode() {
