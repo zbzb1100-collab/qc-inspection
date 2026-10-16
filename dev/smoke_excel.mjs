@@ -70,9 +70,10 @@ const ty = db.inspect_types.find(t => t.name === '驗收'); ok(!!ty, '新增檢�
 ok(db.spaces.some(s => s.name === '陽台' && s.inspect_type_id === ty.id) && db.spaces.some(s => s.name === '書房' && s.code === 'H'), '新增空間別（含同檔新建的類型）');
 const nc = db.categories.find(c => c.name === '20木地板'); ok(!!nc, '新增工項');
 ok(db.items.some(i => i.name === '踢腳板鬆脫' && i.category_id === nc.id), '新增缺失內容掛在新工項下');
-ok(db.vendors.some(v => v.name === '新廠商甲'), '預設廠商中不存在的自動新增');
+ok(!db.vendors.some(v => v.name === '新廠商甲'), '預設廠商打錯／不存在不會自動新增廠商');
+ok(prev.includes('新廠商甲'), '預覽對不存在的預設廠商提出警告');
 const cv = db.category_vendors.filter(x => x.category_id === nc.id).map(x => db.vendors.find(v => v.id === x.vendor_id).name);
-ok(cv.join() === '新廠商甲,太隆興業', '工項預設廠商對應：' + cv);
+ok(cv.join() === '太隆興業', '工項預設廠商只對應已存在的廠商：' + cv);
 ok(db.category_vendors.filter(x => x.category_id === 1).length === 3, '01防水 既有對應保留並加上捷挺裝潢');
 ok(db.repair_methods.some(r => r.name === '重做'), '新增修繕方式');
 // 再匯一次＝冪等

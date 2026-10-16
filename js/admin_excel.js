@@ -33,7 +33,7 @@ function xlHelpRows() {
     ['4. 狀態欄填「啟用」或「停用」；留空＝新增的項目啟用、既有的項目不動。排序留空＝排在最後。'],
     ['5. 棟別樓層：樓層用「、」分隔，照順序，例：2F、3F、4F；匯入時會整格覆蓋該棟原本的樓層。'],
     ['6. 戶別、缺失內容要填的「棟別」「工項」「檢查類型」，必須是已存在，或同一份檔案裡有列出。'],
-    ['7. 工項的「預設廠商」可填多家，用「、」分隔；廠商不存在會自動新增；已設的對應不會被移除。'],
+    ['7. 工項的「預設廠商」可填多家，用「、」分隔；廠商必須已在「廠商」表；已設的對應不會被移除。'],
     ['8. 平面圖照片不在這裡，請到「管理 → 平面圖」批次上傳。'],
     [''],
     ['範例（棟別樓層）：'],
@@ -144,8 +144,7 @@ function xlCompute(stage, data, pend) {
       return { k: n, nm: n, ex, base: { sort: ns('rm', S.m.repair_methods), active: true }, want: { name: n, sort: s, active: a } };
     } });
     case 'vendor': {
-      const rows = rowsOf('vendor').slice(); const have = new Set(rows.map(r => r['廠商']));
-      rowsOf('cat').forEach(c => splitNames(c['預設廠商'] || '').forEach(v => { if (!have.has(v)) { have.add(v); rows.push({ 廠商: v, 狀態: '' }); } }));
+      const rows = rowsOf('vendor');
       return xlStage('廠商', 'vendors', rows, { scope: () => S.m.vendors.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.vendor.has(e.id), row: r => {
         const n = need(r, '廠商'), ex = S.m.vendors.find(t => t.name === n), a = xlActive(r['狀態']);
         return { k: n, nm: n, ex, base: { active: true }, want: { name: n, active: a } };
@@ -186,6 +185,7 @@ function xlCompute(stage, data, pend) {
         const c = S.m.categories.find(x => x.name === r['工項']); let order = 0;
         splitNames(r['預設廠商']).forEach(vn => {
           const v = S.m.vendors.find(x => x.name === vn);
+          if (!v && !pend.vendor.has(vn)) { res.warns.push(`「工項」${r['工項']}：預設廠商「${vn}」不在「廠商」表裡（是不是打錯字？請先在廠商表列出同名廠商），這個對應略過`); return; }
           if (c && v) {
             const rows = S.m.category_vendors.filter(m => m.category_id === c.id);
             if (rows.some(m => m.vendor_id === v.id)) return;
@@ -195,7 +195,7 @@ function xlCompute(stage, data, pend) {
         });
       });
       res.removes = [];
-      if (xlSync && data.cat && data.cat.rows.length && !data.cat.missing.includes('預設廠商')) {
+      if (xlSync && data.cat && data.cat.rows.length && !data.cat.missing.includes('預設廠商') && !res.warns.length) {
         data.cat.rows.forEach(r => {
           const c = S.m.categories.find(x => x.name === r['工項']); if (!c) return;
           const keep = new Set(splitNames(r['預設廠商'] || '').map(n => (S.m.vendors.find(v => v.name === n) || {}).id).filter(Boolean));
