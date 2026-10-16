@@ -1,6 +1,7 @@
 /* 管理：所有清單、平面圖、帳號都在這裡自己改（只有管理者看得到） */
 const adminSel = {};              // 各編輯器目前選到的項目
 const adminOpen = new Set(['bld']);
+const adminShowOff = new Set();      // 哪些清單目前展開顯示「已停用」的項目
 const splitNames = s => s.split(/[,，、\n]+/).map(x => x.trim()).filter(Boolean);
 const nextSort = rows => rows.reduce((m, r) => Math.max(m, r.sort ?? 0), 0) + 1;
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
@@ -14,13 +15,18 @@ function chipEditor(box, o) {
   const selRow = rows.find(r => r.id === selId) || null;
   const nameField = o.nameField || 'name'; const sortable = o.sortable !== false;
   const cs = el('div', 'chips');
-  rows.forEach(r => {
+  const offN = rows.filter(r => r.active === false).length; const showOff = adminShowOff.has(o.key);
+  rows.filter(r => showOff || r.active !== false || (selRow && selRow.id === r.id)).forEach(r => {
     const b = el('button', 'chip' + (r.active === false ? ' off' : '') + (selRow && selRow.id === r.id ? ' sel' : ''), o.label(r));
     b.type = 'button'; b.onclick = () => { adminSel[o.key] = r.id; if (o.onSelect) o.onSelect(r); chipEditor(box, o); };
     cs.appendChild(b);
   });
   if (!rows.length) cs.appendChild(el('span', 'hint', '（還沒有項目）'));
   box.appendChild(cs);
+  if (offN) {
+    const tgl = el('button', 'btn ghost small', showOff ? `收起已停用（${offN}）` : `顯示已停用（${offN}）`); tgl.type = 'button';
+    tgl.onclick = () => { showOff ? adminShowOff.delete(o.key) : adminShowOff.add(o.key); chipEditor(box, o); }; box.appendChild(tgl);
+  }
   if (selRow) {
     const ed = el('div', 'inline-add');
     const inp = el('input'); inp.type = 'text'; inp.value = selRow[nameField] ?? ''; inp.title = '名稱'; ed.appendChild(inp);
