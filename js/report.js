@@ -39,7 +39,7 @@ function initReportFilters() {
   multiSel('bld', idOpts(M.buildingsOf(siteId)), drawPlaceFilters);
   drawPlaceFilters();
   multiSel('cat', idOpts(M.list('categories')));
-  multiSel('status', Object.keys(STATUS).map(k => ({ v: k, t: k === 'fixed' ? '已修繕／不修待確認' : STATUS[k] })));
+  multiSel('status', Object.keys(STATUS).map(k => ({ v: k, t: k === 'fixed' ? '待複驗' : STATUS[k] })));
   multiSel('fixv', idOpts(M.list('vendors')));
   multiSel('respv', idOpts(M.list('vendors')));
   // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
