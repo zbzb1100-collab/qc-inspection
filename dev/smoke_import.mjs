@@ -18,6 +18,7 @@ const ws = XLSX.utils.aoa_to_sheet([H,
   ['A棟', '8f', 'A1', '交屋檢查', '主臥', '99不存在', '亂寫', '', '', '', '油煙機異音', 'K-2.jpg', 'K-2', '對不到'],
   ['A棟', '8F', 'Z9', '交屋檢查', '客餐廳', '01防水', '有漏水或滲水情況', '', '', '', '戶別錯', '', '', '']]);
 const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '缺失匯入');
+const exceljsSrc = fs.readFileSync('/tmp/claude-0/xl/node_modules/exceljs/dist/exceljs.min.js', 'utf8');
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAYAAACNMs+9AAAAFUlEQVR42mNk+M9Qz0AEYBxVSF+FAP5FDvcfRYWgAAAAAElFTkSuQmCC', 'base64');
 const zip = new JSZip(); zip.file('報告/缺失匯入.xlsx', XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
 ['L-1', 'L-2', 'K-2'].forEach(n => zip.file('報告/照片/' + n + '.jpg', png));
@@ -31,6 +32,7 @@ await page.route('**/*', r => {
   const u = r.request().url();
   if (u.startsWith('file://')) return r.continue();
   if (u.includes('supabase')) return r.fulfill({ contentType: 'application/javascript', body: '' });
+  if (u.includes('exceljs')) return r.fulfill({ contentType: 'application/javascript', body: exceljsSrc });
   if (u.includes('jszip')) return r.fulfill({ contentType: 'application/javascript', body: zipSrc });
   if (u.includes('xlsx')) return r.fulfill({ contentType: 'application/javascript', body: xlsxSrc });
   return r.fulfill({ contentType: 'text/css', body: '' });
@@ -43,6 +45,10 @@ await page.locator('summary:has-text("缺失批次匯入")').click();
 const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("下載匯入範本")').click()]);
 const tp = '/tmp/claude-0/xl/im_tpl.xlsx'; await dl.saveAs(tp);
 ok(XLSX.utils.sheet_to_json(XLSX.readFile(tp).Sheets['缺失匯入'], { header: 1 })[0].join() === H.join(), '範本欄位');
+const EX = XL('exceljs'); const twb = new EX.Workbook(); await twb.xlsx.readFile(tp); const tws = twb.getWorksheet('缺失匯入');
+ok(tws.sheetProtection && tws.sheetProtection.sheet && (tws.getCell('A1').protection || {}).locked !== false && tws.getCell('A2').protection.locked === false, '標題列鎖住、資料格可填');
+ok(/^'清單'!/.test(tws.getCell('A2').dataValidation.formulae[0]) && /OFFSET/.test(tws.getCell('G5').dataValidation.formulae[0]), '每格有下拉（缺失內容跟著工項）');
+ok(twb.getWorksheet('清單').getCell('A2').value === 'A棟' && tws.getColumn(7).width >= 30, '清單取自系統設定、欄寬夠');
 
 await page.setInputFiles('#im-file', zp);
 await page.waitForSelector('#im-out table');

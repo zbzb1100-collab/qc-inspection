@@ -2,10 +2,60 @@
 const IM_HEAD = ['棟別', '樓層', '戶別', '檢查類型', '空間', '工項', '缺失內容', '修繕方式', '修繕廠商', '責任廠商', '缺失說明', '照片', '報告編號', '對應備註'];
 const IM_NEED = ['棟別', '樓層', '戶別', '檢查類型', '空間', '工項', '缺失內容'];
 
-function imTemplate() {
-  const ws = XLSX.utils.aoa_to_sheet([IM_HEAD,
-    ['E棟', '17F', 'E1', '第三方驗收', '客餐廳', '10油漆', '牆面油漆不勻、不平整', '', '', '', '全室漆面加強（細紋、髒汙）', 'L-1.jpg、L-2.jpg', 'L-1', '']]);
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '缺失匯入'); return wb;
+// 匯入範本：標題列鎖住；每格都有下拉（清單取自目前系統設定），樓層／戶別跟著棟別、缺失內容跟著工項
+const IM_WIDTH = { 棟別: 8, 樓層: 8, 戶別: 8, 檢查類型: 14, 空間: 10, 工項: 13, 缺失內容: 30, 修繕方式: 12, 修繕廠商: 20, 責任廠商: 20, 缺失說明: 40, 照片: 22, 報告編號: 12, 對應備註: 30 };
+async function imTemplate() {
+  if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('缺失匯入', { views: [{ state: 'frozen', ySplit: 1 }] });
+  const help = wb.addWorksheet('說明');
+  const ls = wb.addWorksheet('清單');
+  const L = n => { let s = ''; for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };   // 0→A
+  let col = 0;
+  const put = (c, title, vals, bold = true) => { ls.getCell(1, c + 1).value = title; ls.getCell(1, c + 1).font = { bold }; vals.forEach((v, i) => { ls.getCell(i + 2, c + 1).value = v; }); };
+  const single = (title, vals) => { const c = col++; put(c, title, vals); return `'清單'!$${L(c)}$2:$${L(c)}$${Math.max(2, vals.length + 1)}`; };
+  const group = (title, pairs) => { col++; put(col++, title, [], false); const a = col; pairs.forEach(([n, vals]) => put(col++, n, vals)); return [a, col - 1]; };
+  const blds = M.buildingsOf(S.sel.siteId), cats = M.list('categories').filter(c => M.itemsOf(c.id).length);
+  const rB = single('棟別', blds.map(b => b.name)), rT = single('檢查類型', M.list('inspect_types').map(t => t.name));
+  const rS = single('空間', M.list('spaces').map(x => x.name)), rC = single('工項', cats.map(c => c.name));
+  const rM = single('修繕方式', M.list('repair_methods').map(x => x.name)), rV = single('廠商', M.list('vendors').map(x => x.name));
+  const gF = group('樓層→', blds.map(b => [b.name, b.floors])), gU = group('戶別→', blds.map(b => [b.name, M.unitsOf(b.id).map(u => u.code)]));
+  const gI = group('缺失內容→', cats.map(c => [c.name, M.itemsOf(c.id).map(i => i.name)]));
+  for (let c = 1; c <= col; c++) ls.getColumn(c).width = 16;
+  const dep = (key, [a, b]) => { const m = `MATCH($${key}2,'清單'!$${L(a)}$1:$${L(b)}$1,0)-1`; return `OFFSET('清單'!$${L(a)}$2,0,${m},COUNTA(OFFSET('清單'!$${L(a)}$2,0,${m},200,1)),1)`; };
+  const dv = { 棟別: rB, 樓層: dep('A', gF), 戶別: dep('A', gU), 檢查類型: rT, 空間: rS, 工項: rC, 缺失內容: dep('F', gI), 修繕方式: rM, 修繕廠商: rV, 責任廠商: rV };
+  ws.columns = IM_HEAD.map(h => ({ header: h, key: h, width: IM_WIDTH[h] || 12 }));
+  const hr = ws.getRow(1); hr.height = 30;
+  hr.eachCell((c, i) => {
+    const need = IM_NEED.includes(IM_HEAD[i - 1]);
+    c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: need ? 'FF1F3A5F' : 'FF3D5A80' } };
+    c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    c.border = { bottom: { style: 'medium', color: { argb: 'FF22D3EE' } } };
+    c.protection = { locked: true };
+  });
+  const N = 500;
+  for (let r = 2; r <= N; r++) {
+    const row = ws.getRow(r);
+    IM_HEAD.forEach((h, i) => {
+      const c = row.getCell(i + 1); c.protection = { locked: false };
+      if (h === '缺失說明' || h === '對應備註') c.alignment = { wrapText: true, vertical: 'top' };
+      if (dv[h]) c.dataValidation = { type: 'list', allowBlank: true, formulae: [dv[h]], showErrorMessage: true, errorTitle: '不在清單裡', error: '請用下拉選單選；清單沒有的項目，請先到系統後台新增。' };
+    });
+  }
+  await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, formatColumns: true, formatRows: true, insertRows: true, deleteRows: true, sort: true, autoFilter: true });
+  const t = M.list('inspect_types')[0], b = blds[0], c = cats[0];
+  [['怎麼填'], ['1. 一列一筆缺失。深藍色標題是必填：棟別、樓層、戶別、檢查類型、空間、工項、缺失內容。'],
+   ['2. 每格點右邊小箭頭用下拉選；樓層、戶別會跟著棟別，缺失內容會跟著工項。'],
+   ['3. 修繕廠商空白＝用工項的預設廠商；責任廠商空白＝同修繕廠商。'],
+   ['4. 照片：把照片和這個 Excel 一起壓成 zip，「照片」欄寫檔名，多張用「、」分開。'],
+   ['5. 標題列已鎖住（避免改到欄名讀不到）；下面的格子可以自由填、插入或刪除列。'],
+   ['6. 清單是下載當下的系統設定；後台新增了項目，請重新下載範本。'], [],
+   ['範例（不要貼到「缺失匯入」頁；照著格式填即可）'], IM_HEAD,
+   [b && b.name, b && b.floors[0], b && (M.unitsOf(b.id)[0] || {}).code, t && t.name, (M.list('spaces')[0] || {}).name, c && c.name, c && (M.itemsOf(c.id)[0] || {}).name, '', '', '', '牆面細紋，需補土重漆', 'L-1.jpg、L-2.jpg', 'L-1', '']]
+    .forEach(r => help.addRow(r));
+  help.getColumn(1).width = 12; help.getRow(1).font = { bold: true, size: 14 }; help.getRow(9).font = { bold: true };
+  return wb;
 }
 const imKey = s => String(s || '').replace(/\s+/g, '').toLowerCase();
 const imFind = (rows, v, f = r => r.name) => { const k = imKey(v); return k ? rows.find(r => imKey(f(r)) === k) : undefined; };
@@ -64,7 +114,11 @@ function renderImportAdmin(root) {
   const g = group('import', '缺失批次匯入', '驗屋報告轉好的 Excel（可連照片打包成 zip）'); root.appendChild(g.d);
   g.body.appendChild(el('div', 'banner', '把驗屋報告整理成「缺失匯入」Excel，照片放在同一個 zip 裡（Excel 的「照片」欄寫檔名），選檔後會先預覽；黃色列是對不到清單的，請在該列選好空間／工項／缺失內容，或取消勾選略過。匯入的缺失都是「待修」，照片當修繕前照片，不標平面圖位置。'));
   const row = el('div', 'row');
-  const tp = el('button', 'btn ghost', '下載匯入範本'); tp.onclick = () => XLSX.writeFile(imTemplate(), '缺失匯入範本.xlsx');
+  const tp = el('button', 'btn ghost', '下載匯入範本'); tp.onclick = () => guard(tp, async () => {
+    const buf = await (await imTemplate()).xlsx.writeBuffer();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = '缺失匯入範本.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
   row.append(tp); g.body.appendChild(row);
   g.body.appendChild(el('label', 'f', '選擇 Excel 或 zip'));
   const fi = el('input'); fi.type = 'file'; fi.accept = '.xlsx,.xls,.zip'; fi.id = 'im-file'; g.body.appendChild(fi);
