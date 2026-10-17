@@ -104,7 +104,8 @@ function imResolve(r, photos) {
   String(r['照片'] || '').split(/[、,，;；\n]+/).map(s => s.trim()).filter(Boolean).forEach(n => {
     const z = photos.get(imKey(n.split('/').pop())); z ? o.photoFiles.push(z) : o.missingPhotos.push(n);
   });
-  o.pick = { space: !sp, cat: !c, item: !it };   // 對不到的欄位，預覽時給下拉選
+  o.flag = !!String(r['對應備註'] || '').trim();   // 有備註＝AI 不確定，整列都給下拉可改
+  o.pick = { space: !sp || o.flag, cat: !c || o.flag, item: !it || o.flag };   // 對不到或有疑問的欄位，預覽時給下拉選
   o.on = !o.bad.length;
   return o;
 }
@@ -124,7 +125,7 @@ function imMountPreview(out, list, onDone) {
     out.innerHTML = '';
     if (!list.length) return;
     const ok = list.filter(o => o.on && imReady(o)).length, todo = list.filter(o => o.on && !imReady(o)).length;
-    out.appendChild(el('p', 'hint', `共 ${list.length} 列：可匯入 ${ok}　待補選 ${todo}　略過 ${list.filter(o => !o.on).length}`));
+    out.appendChild(el('p', 'hint', `共 ${list.length} 列：可匯入 ${ok}　待補選 ${todo}　略過 ${list.filter(o => !o.on).length}` + (list.some(o => o.on && o.flag) ? `　有疑問 ${list.filter(o => o.on && o.flag).length}（藍底，已先選好，可直接下拉改）` : '')));
     const wrap = el('div', 'tablewrap'); const tb = el('table');
     const hr = el('tr'); ['匯入', '戶', '空間', '工項', '缺失內容', '說明／照片'].forEach(h => hr.appendChild(el('th', null, h)));
     const th = el('thead'); th.appendChild(hr); tb.appendChild(th);
@@ -132,6 +133,7 @@ function imMountPreview(out, list, onDone) {
     list.forEach((o, i) => {
       const tr = el('tr'); tr.dataset.i = i;
       if (o.on && !imReady(o)) tr.style.background = 'color-mix(in srgb, var(--fixed) 14%, transparent)';
+      else if (o.on && o.flag) tr.style.background = 'color-mix(in srgb, var(--accent) 8%, transparent)';
       if (!o.on) tr.style.opacity = '.5';
       const c0 = el('td'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = o.on; cb.disabled = !!o.bad.length;
       cb.onchange = () => { o.on = cb.checked; paint(); }; c0.appendChild(cb); tr.appendChild(c0);
