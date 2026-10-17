@@ -213,19 +213,19 @@ function renderAdmin() {
 
   // 4 工項與缺失內容與廠商對應
   { const g = group('cat', '工項、缺失內容、預設廠商'); root.appendChild(g.d);
-    g.body.appendChild(el('label', 'f', '① 工項（點一個來編輯它的缺失內容與廠商）'));
+    g.body.appendChild(el('label', 'f', '工項（點一個來編輯它的缺失內容與廠商）'));
     const cbox = el('div', 'stack'); g.body.appendChild(cbox);
     chipEditor(cbox, { key: 'cat', table: 'categories', onSelect: () => renderAdmin(), rows: M.list('categories', false), label: r => r.name,
       onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i })))),
       placeholder: '新增工項，例：20木地板' });
     const c = M.get('categories', adminSel.cat);
     if (c) {
-      g.body.appendChild(el('label', 'f', `② ${c.name} 的缺失內容`));
+      g.body.appendChild(el('label', 'f', `${c.name} 的缺失內容`));
       const ibox = el('div', 'stack'); g.body.appendChild(ibox);
       chipEditor(ibox, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
         onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i })))),
         placeholder: '新增缺失內容' });
-      g.body.appendChild(el('label', 'f', `③ ${c.name} 的預設廠商（點選＝加入／移除；可多家）`));
+      g.body.appendChild(el('label', 'f', `${c.name} 的預設廠商（點選＝加入／移除；可多家）`));
       const vb = el('div', 'chips'); g.body.appendChild(vb);
       const mapped = new Set(S.m.category_vendors.filter(x => x.category_id === c.id).map(x => x.vendor_id));
       M.list('vendors').forEach(v => {

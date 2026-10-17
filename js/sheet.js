@@ -53,7 +53,7 @@ function paintSheet() {
   const sign = needSign(cur.inspect_type_id);
   $('sh-pass').hidden = st2 !== 'fixed';
   const nf = isNofix(cur);
-  $('sh-pass').textContent = (nf ? '② 確認不修' : '② 複驗合格') + (sign ? '（接著等客戶簽認）' : '，結案');
+  $('sh-pass').textContent = (nf ? '確認不修' : '複驗合格') + (sign ? '（接著等客戶簽認）' : '，結案');
   $('sh-sign').hidden = st2 !== 'signing';
   $('sh-signname').value = cur.signed_name || ''; $('sh-signdate').value = cur.signed_date || today();
   $('sh-nofix').hidden = st2 !== 'todo';
@@ -61,9 +61,9 @@ function paintSheet() {
   $('sh-fixdate-wrap').hidden = !(st2 === 'todo' || (st2 === 'fixed' && !nf));
   $('sh-closeinfo').textContent = st2 === 'closed'
     ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}${cur.signed_name ? `　簽認：${cur.signed_name} ${cur.signed_date || ''}` : ''}`
-    : st2 === 'signing' ? `${cur.close_type === '不修' ? `已確認不修（原因：${cur.close_reason || ''}）` : '複驗合格'}，等客戶簽認。請客戶確認後按③，在簽名板簽名就結案；客戶不認可按「退回待修」。`
-    : nf ? `已提出不修（原因：${cur.close_reason || ''}），等驗收人員確認。同意不修按②${sign ? '（之後還要客戶簽認）' : '結案'}；不同意按「退回待修」。`
-    : (st2 === 'fixed' ? `廠商已修繕，等複驗。複驗合格就按②${sign ? '（之後還要客戶簽認）' : '結案'}；不合格按「退回待修」。` : '修好後拍「修繕後照片」，再按①；不修的話按「不修」填原因，送驗收人員確認。');
+    : st2 === 'signing' ? `${cur.close_type === '不修' ? `已確認不修（原因：${cur.close_reason || ''}）` : '複驗合格'}，等客戶簽認。請客戶確認後按「客戶簽名」，在簽名板簽名就結案；客戶不認可按「退回待修」。`
+    : nf ? `已提出不修（原因：${cur.close_reason || ''}），等驗收人員確認。同意不修按「確認不修」${sign ? '（之後還要客戶簽認）' : '結案'}；不同意按「退回待修」。`
+    : (st2 === 'fixed' ? `廠商已修繕，等複驗。複驗合格就按「複驗合格」${sign ? '（之後還要客戶簽認）' : '結案'}；不合格按「退回待修」。` : '修好後拍「修繕後照片」，再按「修繕完成」；不修的話按「不修」填原因，送驗收人員確認。');
   $('sh-del').hidden = isNew || !isAdmin(); $('sh-del').textContent = '刪除';
   $('sh-trail').textContent = isNew ? '' :
     `建立：${M.userName(cur.created_by)} ${fmtTime(cur.created_at)}　最後修改：${M.userName(cur.updated_by) || M.userName(cur.created_by)} ${fmtTime(cur.updated_at)}` +
@@ -85,14 +85,14 @@ async function paintMini() {
   const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
   box.appendChild(pin);
 }
-// 廠商帳號：缺失內容只能看；只能填修繕完成日、拍修繕後照片、按①
+// 廠商帳號：缺失內容只能看；只能填修繕完成日、拍修繕後照片、按修繕完成
 function paintVendorMode() {
   const v = isVendor(); const panel = $('sheet').querySelector('.panel');
   panel.querySelectorAll('.chip, #sh-cust, #sh-date, #sh-desc, #sh-fixvendor-other, #sh-vendor').forEach(x => { x.disabled = v; });
   if (!v) return;
   ['sh-pass', 'sh-sign', 'sh-nofix', 'sh-reopen', 'sh-del', 'sh-save'].forEach(id => { $(id).hidden = true; });
   if (cur.status === 'fixed') $('sh-closeinfo').textContent = '已回報修繕完成，等甲方複驗。';
-  if (cur.status === 'todo') $('sh-closeinfo').textContent = '修好後拍「修繕後照片」，再按①回報。';
+  if (cur.status === 'todo') $('sh-closeinfo').textContent = '修好後拍「修繕後照片」，再按「修繕完成」回報。';
 }
 
 function paintChoices() {

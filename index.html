@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610170646">
+<link rel="stylesheet" href="css/app.css?v=202610170652">
 </head>
 <body>
 
@@ -125,14 +125,14 @@
       <div class="hint" id="sh-closeinfo"></div>
       <div id="sh-fixdate-wrap"><label class="f">修繕完成日期（預帶今天，可改）</label><input type="date" id="sh-fixdate"></div>
       <div><label class="f">修繕後照片</label><div class="photos" id="sh-afterphotos"></div></div>
-      <button class="btn ghost block" id="sh-fixed">① 修繕完成（廠商修好了，等複驗）</button>
-      <button class="btn block" id="sh-pass">② 複驗合格，結案</button>
+      <button class="btn ghost block" id="sh-fixed">修繕完成（廠商修好了，等複驗）</button>
+      <button class="btn block" id="sh-pass">複驗合格，結案</button>
       <div id="sh-sign" class="stack" hidden>
         <div class="row">
           <div style="flex:1;min-width:140px"><label class="f">簽認人（選填）</label><input type="text" id="sh-signname" placeholder="客戶或管委會姓名"></div>
           <div style="flex:1;min-width:140px"><label class="f">簽認日期</label><input type="date" id="sh-signdate"></div>
         </div>
-        <button class="btn block" id="sh-signgo">③ 客戶簽名，結案</button>
+        <button class="btn block" id="sh-signgo">客戶簽名，結案</button>
       </div>
       <div id="sh-signwrap" hidden><label class="f">客戶簽名</label><div class="photos signs" id="sh-signimg"></div></div>
       <button class="btn ghost block" id="sh-reopen">複驗不合格／重新開啟，退回待修</button>
@@ -172,14 +172,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610170646"></script>
-<script src="js/core.js?v=202610170646"></script>
-<script src="js/pick.js?v=202610170646"></script>
-<script src="js/sheet.js?v=202610170646"></script>
-<script src="js/report.js?v=202610170646"></script>
-<script src="js/admin.js?v=202610170646"></script>
-<script src="js/admin_excel.js?v=202610170646"></script>
-<script src="js/admin_import.js?v=202610170646"></script>
-<script src="js/main.js?v=202610170646"></script>
+<script src="config.js?v=202610170652"></script>
+<script src="js/core.js?v=202610170652"></script>
+<script src="js/pick.js?v=202610170652"></script>
+<script src="js/sheet.js?v=202610170652"></script>
+<script src="js/report.js?v=202610170652"></script>
+<script src="js/admin.js?v=202610170652"></script>
+<script src="js/admin_excel.js?v=202610170652"></script>
+<script src="js/admin_import.js?v=202610170652"></script>
+<script src="js/main.js?v=202610170652"></script>
 </body>
 </html>
