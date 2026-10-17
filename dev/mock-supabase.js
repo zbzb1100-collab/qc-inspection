@@ -13,7 +13,7 @@
   seed('vendors', [{ name: '太隆興業', active: true }, { name: '健暉工程行', active: true }, { name: '捷挺裝潢', active: true }]);
   T.category_vendors = [{ category_id: 1, vendor_id: 1, sort: 1 }, { category_id: 1, vendor_id: 2, sort: 2 }, { category_id: 2, vendor_id: 3, sort: 1 }];
   seed('repair_methods', [{ name: '修補', sort: 1, active: true }, { name: '更換', sort: 2, active: true }]);
-  T.plans = []; T.plan_spaces = []; T.unit_spaces = []; T.defects = []; T.defect_photos = [];
+  T.plans = []; T.plan_spaces = []; T.unit_spaces = []; T.defects = []; T.defect_photos = []; T.report_jobs = [];
   T.profiles = [{ id: 'u-admin', name: '管理員', email: 'boss@x.com', role: 'admin', active: true, created_at: '2026-01-01' },
     { id: 'u-staff', name: '王小明', email: 'staff@x.com', role: 'user', active: true, created_at: '2026-01-02' }];
   const files = {};            // storage: bucket/path -> Blob
@@ -74,6 +74,7 @@
   }
   const storage = { from: bucket => ({
     async upload(path, blob) { files[bucket + '/' + path] = blob; return { data: { path }, error: null }; },
+    async download(path) { const f = files[bucket + '/' + path]; return f ? { data: f, error: null } : { data: null, error: { message: 'Object not found' } }; },
     async remove(paths) { paths.forEach(p => delete files[bucket + '/' + p]); return { data: [], error: null }; },
     async createSignedUrls(paths) { return { data: paths.map(p => ({ path: p, signedUrl: files[bucket + '/' + p] || bucket === 'plans' ? png() : png() })), error: null }; }
   }) };

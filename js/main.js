@@ -1,11 +1,11 @@
 /* 登入、畫面切換、啟動 */
-const SCREENS = ['pick', 'fill', 'report', 'admin'];
+const SCREENS = ['pick', 'fill', 'report', 'jobs', 'admin'];
 function show(name) {
   SCREENS.forEach(s => { $('s-' + s).hidden = s !== name; $('t-' + s).classList.toggle('on', s === name); });
   document.querySelector('main').scrollTop = 0;
   const b = S.sel && M.get('buildings', S.sel.bldId), u = S.sel && M.get('units', S.sel.unitId);
-  $('crumb').textContent = { pick: '選戶', fill: b && u ? `${b.name} ${S.sel.floor} ${u.code}` : '填寫', report: '報表', admin: '管理' }[name];
-  const run = { pick: renderPick, fill: renderFill, report: async () => { initReportFilters(); await runReport(); }, admin: async () => renderAdmin() }[name];
+  $('crumb').textContent = { pick: '選戶', fill: b && u ? `${b.name} ${S.sel.floor} ${u.code}` : '填寫', report: '報表', jobs: '驗屋報告', admin: '管理' }[name];
+  const run = { pick: renderPick, fill: renderFill, report: async () => { initReportFilters(); await runReport(); }, jobs: renderJobs, admin: async () => renderAdmin() }[name];
   Promise.resolve(run()).catch(e => { console.error(e); toast(errMsg(e)); });
 }
 SCREENS.forEach(s => $('t-' + s).onclick = () => {
@@ -44,6 +44,7 @@ async function enter(user) {
   $('login').hidden = true; $('app').hidden = false;
   $('userbtn').textContent = S.profile.name || S.profile.email || '我';
   $('t-admin').hidden = !isAdmin();
+  $('t-jobs').hidden = isVendor();
   show(isVendor() ? 'report' : 'pick');   // 廠商一進來就看自己的缺失清單
 }
 

@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610170811">
+<link rel="stylesheet" href="css/app.css?v=202610170836">
 </head>
 <body>
 
@@ -84,6 +84,11 @@
       </div>
     </section>
 
+    <!-- 驗屋報告轉檔 -->
+    <section class="screen" id="s-jobs" hidden>
+      <div class="stack" id="jobs-root"></div>
+    </section>
+
     <!-- 管理 -->
     <section class="screen" id="s-admin" hidden>
       <div class="stack" id="admin-root"></div>
@@ -94,6 +99,7 @@
     <button id="t-pick" class="on"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>選戶</button>
     <button id="t-fill"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/></svg>填寫</button>
     <button id="t-report"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>報表</button>
+    <button id="t-jobs" hidden><svg viewBox="0 0 24 24"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M12 18v-6M9 15l3-3 3 3"/></svg>報告</button>
     <button id="t-admin" hidden><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>管理</button>
   </nav>
 </div>
@@ -172,14 +178,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610170811"></script>
-<script src="js/core.js?v=202610170811"></script>
-<script src="js/pick.js?v=202610170811"></script>
-<script src="js/sheet.js?v=202610170811"></script>
-<script src="js/report.js?v=202610170811"></script>
-<script src="js/admin.js?v=202610170811"></script>
-<script src="js/admin_excel.js?v=202610170811"></script>
-<script src="js/admin_import.js?v=202610170811"></script>
-<script src="js/main.js?v=202610170811"></script>
+<script src="config.js?v=202610170836"></script>
+<script src="js/core.js?v=202610170836"></script>
+<script src="js/pick.js?v=202610170836"></script>
+<script src="js/sheet.js?v=202610170836"></script>
+<script src="js/report.js?v=202610170836"></script>
+<script src="js/admin.js?v=202610170836"></script>
+<script src="js/admin_excel.js?v=202610170836"></script>
+<script src="js/admin_import.js?v=202610170836"></script>
+<script src="js/jobs.js?v=202610170836"></script>
+<script src="js/main.js?v=202610170836"></script>
 </body>
 </html>

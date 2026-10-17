@@ -110,20 +110,8 @@ function imResolve(r, photos) {
 }
 const imReady = o => !o.bad.length && o.space_id && o.category_id && o.item_id;
 
-function renderImportAdmin(root) {
-  const g = group('import', '缺失批次匯入', '驗屋報告轉好的 Excel（可連照片打包成 zip）'); root.appendChild(g.d);
-  g.body.appendChild(el('div', 'banner', '把驗屋報告整理成「缺失匯入」Excel，照片放在同一個 zip 裡（Excel 的「照片」欄寫檔名），選檔後會先預覽；黃色列是對不到清單的，請在該列選好空間／工項／缺失內容，或取消勾選略過。匯入的缺失都是「待修」，照片當修繕前照片，不標平面圖位置。'));
-  const row = el('div', 'row');
-  const tp = el('button', 'btn ghost', '下載匯入範本'); tp.onclick = () => guard(tp, async () => {
-    const buf = await (await imTemplate()).xlsx.writeBuffer();
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-    a.download = '缺失匯入範本.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-  });
-  row.append(tp); g.body.appendChild(row);
-  g.body.appendChild(el('label', 'f', '選擇 Excel 或 zip'));
-  const fi = el('input'); fi.type = 'file'; fi.accept = '.xlsx,.xls,.zip'; fi.id = 'im-file'; g.body.appendChild(fi);
-  const out = el('div', 'stack'); out.id = 'im-out'; g.body.appendChild(out);
-  let list = [];
+// 預覽表：對不到的欄位給下拉補選，確認後逐筆寫入（Excel 匯入、報告轉檔共用）
+function imMountPreview(out, list, onDone) {
 
   function cellSel(o, field, rows, label) {
     const s = el('select'); s.style.minWidth = '8em';
@@ -177,17 +165,34 @@ function renderImportAdmin(root) {
         }
         o.on = false; o.done = true; n++; log.textContent = `匯入中… ${n}／${rows.length} 筆，照片 ${np} 張`;
       }
-      toast(`完成：${n} 筆缺失、${np} 張照片`); list = []; fi.value = ''; out.innerHTML = '';
+      toast(`完成：${n} 筆缺失、${np} 張照片`); list = []; out.innerHTML = '';
       out.appendChild(el('div', 'banner', `已匯入 ${n} 筆缺失、${np} 張照片。可到「報表」查看。`));
+      if (onDone) await onDone(n, np);
     });
     out.appendChild(go);
   }
+  paint();
+}
+
+function renderImportAdmin(root) {
+  const g = group('import', '缺失批次匯入', '驗屋報告轉好的 Excel（可連照片打包成 zip）'); root.appendChild(g.d);
+  g.body.appendChild(el('div', 'banner', '把驗屋報告整理成「缺失匯入」Excel，照片放在同一個 zip 裡（Excel 的「照片」欄寫檔名），選檔後會先預覽；黃色列是對不到清單的，請在該列選好空間／工項／缺失內容，或取消勾選略過。匯入的缺失都是「待修」，照片當修繕前照片，不標平面圖位置。'));
+  const row = el('div', 'row');
+  const tp = el('button', 'btn ghost', '下載匯入範本'); tp.onclick = () => guard(tp, async () => {
+    const buf = await (await imTemplate()).xlsx.writeBuffer();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    a.download = '缺失匯入範本.xlsx'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+  row.append(tp); g.body.appendChild(row);
+  g.body.appendChild(el('label', 'f', '選擇 Excel 或 zip'));
+  const fi = el('input'); fi.type = 'file'; fi.accept = '.xlsx,.xls,.zip'; fi.id = 'im-file'; g.body.appendChild(fi);
+  const out = el('div', 'stack'); out.id = 'im-out'; g.body.appendChild(out);
   fi.onchange = async () => {
-    const f = fi.files[0]; if (!f) return; out.innerHTML = ''; list = [];
+    const f = fi.files[0]; if (!f) return; out.innerHTML = '';
     try {
       const { rows, photos } = await imReadFile(f);
       if (!rows.length) throw new Error('Excel 裡沒有資料列');
-      list = rows.map(r => imResolve(r, photos)); paint();
+      imMountPreview(out, rows.map(r => imResolve(r, photos)), () => { fi.value = ''; });
     } catch (e) { console.warn(e); out.appendChild(el('div', 'banner', errMsg(e))); }
   };
 }
