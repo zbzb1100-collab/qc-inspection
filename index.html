@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610170721">
+<link rel="stylesheet" href="css/app.css?v=202610170732">
 </head>
 <body>
 
@@ -78,7 +78,7 @@
           <div class="row"><button class="btn ghost" id="f-pdf" style="flex:1">匯出 PDF（文字）</button><button class="btn ghost" id="f-pdf-photo" style="flex:1">匯出 PDF（含照片）</button></div>
           <div class="row" style="gap:16px"><label class="hint"><input type="checkbox" id="f-ph-before" checked> 附修繕前照片</label><label class="hint"><input type="checkbox" id="f-ph-after" checked> 附修繕後照片</label></div>
         </div>
-        <div class="stat"><div><b id="st-all">0</b><small>筆</small></div><div><b id="st-todo">0</b><small>待修</small></div><div><b id="st-closed">0</b><small>結案</small></div></div>
+        <div class="stat"><div><b id="st-all">0</b><small>總數</small></div><div><b id="st-todo">0</b><small>待修</small></div><div class="s-fixed"><b id="st-fixed">0</b><small>待複驗</small></div><div class="s-sign"><b id="st-signing">0</b><small>待簽認</small></div><div class="s-closed"><b id="st-closed">0</b><small>結案</small></div></div>
         <div class="tablewrap"><table><thead><tr><th>戶</th><th>空間</th><th>工項 / 缺失</th><th>修繕廠商 / 責任廠商</th><th>狀態</th></tr></thead><tbody id="rtable"></tbody></table></div>
         <p class="hint" id="rnote"></p>
       </div>
@@ -172,14 +172,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610170721"></script>
-<script src="js/core.js?v=202610170721"></script>
-<script src="js/pick.js?v=202610170721"></script>
-<script src="js/sheet.js?v=202610170721"></script>
-<script src="js/report.js?v=202610170721"></script>
-<script src="js/admin.js?v=202610170721"></script>
-<script src="js/admin_excel.js?v=202610170721"></script>
-<script src="js/admin_import.js?v=202610170721"></script>
-<script src="js/main.js?v=202610170721"></script>
+<script src="config.js?v=202610170732"></script>
+<script src="js/core.js?v=202610170732"></script>
+<script src="js/pick.js?v=202610170732"></script>
+<script src="js/sheet.js?v=202610170732"></script>
+<script src="js/report.js?v=202610170732"></script>
+<script src="js/admin.js?v=202610170732"></script>
+<script src="js/admin_excel.js?v=202610170732"></script>
+<script src="js/admin_import.js?v=202610170732"></script>
+<script src="js/main.js?v=202610170732"></script>
 </body>
 </html>

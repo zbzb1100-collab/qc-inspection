@@ -69,8 +69,7 @@ const SHOW_MAX = 300;
 function drawReport() {
   const rows = reportRows;
   $('st-all').textContent = rows.length;
-  $('st-todo').textContent = rows.filter(r => r.status !== 'closed').length;
-  $('st-closed').textContent = rows.filter(r => r.status === 'closed').length;
+  ['todo', 'fixed', 'signing', 'closed'].forEach(k => { $('st-' + k).textContent = rows.filter(r => r.status === k).length; });   // 每筆同時只在一個狀態，四格加起來＝總數
   const tb = $('rtable'); tb.innerHTML = '';
   rows.slice(0, SHOW_MAX).forEach(d => {
     const tr = el('tr'); tr.style.cursor = 'pointer';
