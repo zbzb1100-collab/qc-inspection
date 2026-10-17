@@ -217,3 +217,15 @@ th{font-family:var(--mono);letter-spacing:.06em}
 .signbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;width:100%;max-width:720px}
 #sp-canvas{display:block;width:100%;height:min(46vh,300px);background:#fff;border-radius:8px;touch-action:none;cursor:crosshair}
 .photos.signs img{width:auto;max-width:100%;height:96px;object-fit:contain;background:#fff}
+
+/* 報表複選條件 */
+.ms{position:relative;min-width:0}
+.ms-btn{width:100%;font:inherit;font-size:17px;text-align:left;padding:10px 32px 10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);color:var(--ink);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+.ms-btn::after{content:'▾';position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted)}
+.ms-btn.on{border-color:var(--accent);color:var(--accent)}
+.ms-panel{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px;max-height:55vh;overflow:auto;box-shadow:0 10px 30px rgba(0,0,0,.5);min-width:180px}
+.ms-panel[hidden]{display:none}
+.ms-tools{display:flex;gap:8px;padding:4px 4px 8px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.ms-opt{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:6px;cursor:pointer}
+.ms-opt:hover{background:var(--surface2)}
+.ms-opt input{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0}

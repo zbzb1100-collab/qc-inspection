@@ -136,13 +136,20 @@ ok(d.status === 'closed' && d.close_type === '不修' && d.close_reason === '屋
 // ---- 報表 ----
 await page.click('#t-report'); await page.waitForTimeout(400);
 ok((await page.textContent('#st-all')) === '2' && (await page.textContent('#st-closed')) === '2', '報表統計');
-await page.selectOption('#f-cat', '1'); await page.click('#f-go'); await page.waitForTimeout(300);
+const pickF = async (k, v) => { await page.click(`#f-${k} .ms-btn`); await page.check(`#f-${k} input[value="${v}"]`); await page.click(`#f-${k} .ms-btn`); };
+await pickF('cat', '1'); await page.click('#f-go'); await page.waitForTimeout(300);
 ok((await page.textContent('#st-all')) === '1', '工項篩選');
 await page.click('#f-clear'); await page.waitForTimeout(300);
-await page.selectOption('#f-fixv', '1'); await page.click('#f-go'); await page.waitForTimeout(300);
+await pickF('fixv', '1'); await page.click('#f-go'); await page.waitForTimeout(300);
 ok((await page.textContent('#st-all')) === '1', '修繕廠商篩選');
+const other = await page.evaluate(() => window.__db.T.defects.map(d => d.fix_vendor_id).find(v => v !== 1));
+await pickF('fixv', String(other)); await page.click('#f-go'); await page.waitForTimeout(300);
+ok((await page.textContent('#st-all')) === '2' && (await page.textContent('#f-fixv .ms-btn')).includes('、'), '修繕廠商複選兩家');
+await pickF('status', 'todo'); await page.click('#f-go'); await page.waitForTimeout(300);
+ok((await page.textContent('#st-all')) === '0', '多個條件之間是「且」');
 await page.click('#f-clear'); await page.waitForTimeout(300);
-await page.selectOption('#f-respv', '3'); await page.click('#f-go'); await page.waitForTimeout(300);
+ok((await page.textContent('#f-fixv .ms-btn')) === '全部修繕廠商', '清除條件後回到全部');
+await pickF('respv', '3'); await page.click('#f-go'); await page.waitForTimeout(300);
 ok((await page.textContent('#st-all')) === '2', '責任廠商篩選');
 await page.click('#f-export'); await page.waitForTimeout(300);
 ok(!!(await page.evaluate(() => window.__xlsx)) && (await page.evaluate(() => window.__xlsx.n)).endsWith('.xlsx'), '匯出 Excel 被呼叫');

@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610161011">
+<link rel="stylesheet" href="css/app.css?v=202610170005">
 </head>
 <body>
 
@@ -68,11 +68,10 @@
         <div class="card stack">
           <label class="f">勾選條件撈資料</label>
           <div class="filters">
-            <select id="f-itype"></select><select id="f-bld"></select>
-            <select id="f-floor"></select><select id="f-unit"></select>
-            <select id="f-cat"></select>
-            <select id="f-status"><option value="">全部狀態</option><option value="todo">待修</option><option value="fixed">已修繕</option><option value="signing">待簽認</option><option value="closed">結案</option></select>
-            <select id="f-fixv"></select><select id="f-respv"></select>
+            <div id="f-itype"></div><div id="f-bld"></div>
+            <div id="f-floor"></div><div id="f-unit"></div>
+            <div id="f-cat"></div><div id="f-status"></div>
+            <div id="f-fixv"></div><div id="f-respv"></div>
           </div>
           <div class="row"><button class="btn ghost" id="f-clear">清除條件</button><button class="btn" id="f-go" style="flex:1">查詢</button></div>
           <div class="row"><button class="btn ghost" id="f-export" style="flex:1">匯出 Excel（文字）</button><button class="btn ghost" id="f-export-photo" style="flex:1">匯出 Excel（含照片）</button></div>
@@ -169,14 +168,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610161011"></script>
-<script src="js/core.js?v=202610161011"></script>
-<script src="js/pick.js?v=202610161011"></script>
-<script src="js/sheet.js?v=202610161011"></script>
-<script src="js/report.js?v=202610161011"></script>
-<script src="js/admin.js?v=202610161011"></script>
-<script src="js/admin_excel.js?v=202610161011"></script>
-<script src="js/admin_import.js?v=202610161011"></script>
-<script src="js/main.js?v=202610161011"></script>
+<script src="config.js?v=202610170005"></script>
+<script src="js/core.js?v=202610170005"></script>
+<script src="js/pick.js?v=202610170005"></script>
+<script src="js/sheet.js?v=202610170005"></script>
+<script src="js/report.js?v=202610170005"></script>
+<script src="js/admin.js?v=202610170005"></script>
+<script src="js/admin_excel.js?v=202610170005"></script>
+<script src="js/admin_import.js?v=202610170005"></script>
+<script src="js/main.js?v=202610170005"></script>
 </body>
 </html>

@@ -1,48 +1,65 @@
 /* 報表：勾選條件查詢、匯出 Excel */
 let reportRows = [];
-const RF = { bld: '', floor: '', unit: '', cat: '', status: '', fixv: '', respv: '', itype: '' };
+const RF = { itype: [], bld: [], floor: [], unit: [], cat: [], status: [], fixv: [], respv: [] };   // 每個條件可複選，空的＝全部
+const RF_ALL = { itype: '全部檢查類型', bld: '全部棟別', floor: '全部樓層', unit: '全部戶別', cat: '全部工項', status: '全部狀態', fixv: '全部修繕廠商', respv: '全部責任廠商' };
 
+// 複選下拉：按鈕顯示已選項目，點開是勾選清單
+function multiSel(key, opts, onChange) {
+  const box = $('f-' + key); box.innerHTML = ''; box.className = 'ms';
+  const sel = RF[key] = RF[key].filter(v => opts.some(o => o.v === v));   // 拿掉已不在清單裡的
+  const btn = el('button', 'ms-btn'); btn.type = 'button';
+  const label = () => {
+    const names = opts.filter(o => sel.includes(o.v)).map(o => o.t);
+    btn.textContent = !names.length ? RF_ALL[key] : names.length <= 2 ? names.join('、') : `${names.slice(0, 2).join('、')} 等 ${names.length} 項`;
+    btn.classList.toggle('on', !!names.length);
+  };
+  const pn = el('div', 'ms-panel'); pn.hidden = true;
+  const tools = el('div', 'ms-tools');
+  const all = el('button', 'iconbtn', '全選'); all.type = 'button';
+  const none = el('button', 'iconbtn', '清除'); none.type = 'button';
+  tools.append(all, none); pn.appendChild(tools);
+  const cbs = opts.map(o => {
+    const lb = el('label', 'ms-opt'); const cb = el('input'); cb.type = 'checkbox'; cb.value = o.v; cb.checked = sel.includes(o.v);
+    cb.onchange = () => { const i = sel.indexOf(o.v); if (cb.checked && i < 0) sel.push(o.v); if (!cb.checked && i >= 0) sel.splice(i, 1); label(); onChange && onChange(); };
+    lb.append(cb, document.createTextNode(o.t)); pn.appendChild(lb); return cb;
+  });
+  if (!opts.length) pn.appendChild(el('div', 'hint', '（沒有選項）'));
+  const setAll = on => { sel.length = 0; if (on) opts.forEach(o => sel.push(o.v)); cbs.forEach(c => { c.checked = on; }); label(); onChange && onChange(); };
+  all.onclick = () => setAll(true); none.onclick = () => setAll(false);
+  btn.onclick = () => { const open = pn.hidden; document.querySelectorAll('.ms-panel').forEach(p => { p.hidden = true; }); pn.hidden = !open; };
+  box.append(btn, pn); label();
+}
+document.addEventListener('click', e => { if (!e.target.closest('.ms')) document.querySelectorAll('.ms-panel').forEach(p => { p.hidden = true; }); });
+
+const idOpts = rows => rows.map(r => ({ v: r.id, t: r.name }));
+let closedFloors = [];
 function initReportFilters() {
   const siteId = S.sel.siteId;
-  fillSelect($('f-bld'), M.buildingsOf(siteId), RF.bld, '全部棟別');
-  const b = M.get('buildings', Number(RF.bld));
-  const floors = b ? b.floors : [...new Set(M.list('buildings').flatMap(x => x.floors))];
-  const fs = $('f-floor'); fs.innerHTML = '<option value="">全部樓層</option>';
-  floors.forEach(f => { const o = el('option', null, f); o.value = f; fs.appendChild(o); }); fs.value = RF.floor;
+  multiSel('itype', idOpts(M.list('inspect_types')));
+  multiSel('bld', idOpts(M.buildingsOf(siteId)), drawPlaceFilters);
+  drawPlaceFilters();
+  multiSel('cat', idOpts(M.list('categories')));
+  multiSel('status', Object.keys(STATUS).map(k => ({ v: k, t: STATUS[k] })));
+  multiSel('fixv', idOpts(M.list('vendors')));
+  multiSel('respv', idOpts(M.list('vendors')));
   // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
-  (async () => {
-    let q = sb.from('defects').select('floor').limit(5000); if (b) q = q.eq('building_id', b.id);
-    const { data } = await q; if (!data) return;
-    const extra = [...new Set(data.map(d => d.floor))].filter(f => !floors.includes(f));
-    extra.forEach(f => { const o = el('option', null, f + '（已關閉）'); o.value = f; fs.appendChild(o); }); fs.value = RF.floor;
-  })();
-  fillSelect($('f-unit'), b ? M.unitsOf(b.id) : [], RF.unit, b ? '全部戶別' : '（先選棟別）');
-  fillSelect($('f-cat'), M.list('categories'), RF.cat, '全部工項');
-  $('f-status').value = RF.status;
-  fillSelect($('f-fixv'), M.list('vendors'), RF.fixv, '全部修繕廠商');
-  fillSelect($('f-respv'), M.list('vendors'), RF.respv, '全部責任廠商');
-  fillSelect($('f-itype'), M.list('inspect_types'), RF.itype, '全部檢查類型');
+  sb.from('defects').select('building_id,floor').limit(5000).then(({ data }) => { if (!data) return; closedFloors = data; drawPlaceFilters(); });
 }
-function readFilters() {
-  RF.bld = $('f-bld').value; RF.floor = $('f-floor').value; RF.unit = $('f-unit').value; RF.cat = $('f-cat').value;
-  RF.status = $('f-status').value; RF.fixv = $('f-fixv').value; RF.respv = $('f-respv').value; RF.itype = $('f-itype').value;
+function drawPlaceFilters() {   // 樓層、戶別跟著選的棟別走
+  const blds = RF.bld.length ? RF.bld.map(id => M.get('buildings', id)).filter(Boolean) : M.buildingsOf(S.sel.siteId);
+  const floors = [...new Set(blds.flatMap(b => b.floors))];
+  const ids = blds.map(b => b.id), extra = [...new Set(closedFloors.filter(d => ids.includes(d.building_id)).map(d => d.floor))].filter(f => !floors.includes(f));
+  multiSel('floor', floors.map(f => ({ v: f, t: f })).concat(extra.map(f => ({ v: f, t: f + '（已關閉）' }))));
+  multiSel('unit', blds.flatMap(b => M.unitsOf(b.id).map(u => ({ v: u.id, t: u.code }))));
 }
-$('f-bld').onchange = () => { readFilters(); RF.unit = ''; RF.floor = ''; initReportFilters(); };
-$('f-clear').onclick = () => { Object.keys(RF).forEach(k => RF[k] = ''); initReportFilters(); runReport(); };
+$('f-clear').onclick = () => { Object.keys(RF).forEach(k => { RF[k] = []; }); initReportFilters(); runReport(); };
 $('f-go').onclick = e => guard(e.currentTarget, runReport);
 
 async function runReport() {
-  readFilters();
+  const col = { itype: 'inspect_type_id', bld: 'building_id', floor: 'floor', unit: 'unit_id', cat: 'category_id', status: 'status', fixv: 'fix_vendor_id', respv: 'resp_vendor_id' };
   const mk = () => {
     let q = sb.from('defects').select('*').order('id', { ascending: false });
-    if (RF.bld) q = q.eq('building_id', Number(RF.bld));
-    if (RF.floor) q = q.eq('floor', RF.floor);
-    if (RF.unit) q = q.eq('unit_id', Number(RF.unit));
-    if (RF.cat) q = q.eq('category_id', Number(RF.cat));
-    if (RF.status) q = q.eq('status', RF.status);
-    if (RF.fixv) q = q.eq('fix_vendor_id', Number(RF.fixv));
-    if (RF.respv) q = q.eq('resp_vendor_id', Number(RF.respv));
-    if (RF.itype) q = q.eq('inspect_type_id', Number(RF.itype));
+    Object.keys(col).forEach(k => { if (RF[k].length) q = q.in(col[k], RF[k]); });
     return q;
   };
   reportRows = await fetchAll(mk);
@@ -172,14 +189,15 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
 function filterSummary() {
   const parts = [];
   const add = (label, v) => { if (v) parts.push(`${label}：${v}`); };
-  add('檢查類型', RF.itype && M.name('inspect_types', Number(RF.itype)));
-  add('棟別', RF.bld && M.name('buildings', Number(RF.bld)));
-  add('樓層', RF.floor);
-  add('戶別', RF.unit && M.unitCode(Number(RF.unit)));
-  add('工項', RF.cat && M.name('categories', Number(RF.cat)));
-  add('狀態', RF.status && STATUS[RF.status]);
-  add('修繕廠商', RF.fixv && M.name('vendors', Number(RF.fixv)));
-  add('責任廠商', RF.respv && M.name('vendors', Number(RF.respv)));
+  const nm = (k, f) => RF[k].map(f).join('、');
+  add('檢查類型', nm('itype', v => M.name('inspect_types', v)));
+  add('棟別', nm('bld', v => M.name('buildings', v)));
+  add('樓層', nm('floor', v => v));
+  add('戶別', nm('unit', v => M.unitCode(v)));
+  add('工項', nm('cat', v => M.name('categories', v)));
+  add('狀態', nm('status', v => STATUS[v]));
+  add('修繕廠商', nm('fixv', v => M.name('vendors', v)));
+  add('責任廠商', nm('respv', v => M.name('vendors', v)));
   return parts.length ? parts.join('　') : '全部資料';
 }
 function printNow(landscape) {
