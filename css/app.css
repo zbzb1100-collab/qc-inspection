@@ -229,3 +229,5 @@ th{font-family:var(--mono);letter-spacing:.06em}
 .ms-opt{display:flex;align-items:center;gap:10px;padding:9px 8px;border-radius:6px;cursor:pointer}
 .ms-opt:hover{background:var(--surface2)}
 .ms-opt input{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0}
+
+.plan{margin-inline:auto;max-width:100%}

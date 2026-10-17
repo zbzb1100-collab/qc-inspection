@@ -79,7 +79,7 @@ async function paintMini() {
   box.hidden = !plan; if (!plan) return;
   const url = await signedUrl('plans', plan.path).catch(() => '');
   if (me !== cur) return;
-  $('sh-miniimg').src = url;
+  $('sh-miniimg').src = url; fitMiniPlan();
   const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
   box.appendChild(pin);
 }

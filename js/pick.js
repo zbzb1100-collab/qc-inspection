@@ -108,7 +108,7 @@ async function renderFill() {
   });
 }
 function drawPins() {
-  const plan = $('plan');
+  const plan = $('plan'); fitMainPlan();
   plan.querySelectorAll('.pin,.mark').forEach(p => p.remove());
   const pl = S.curPlan;
   if (pl) {

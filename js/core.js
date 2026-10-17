@@ -194,3 +194,18 @@ function openSignPad(title) {
     };
   });
 }
+
+// 平面圖顯示大小：寬度填滿，但高度不超過畫面的一定比例（直長的圖不會拉很長）
+function fitPlan(box, img, vh) {
+  const fit = () => {
+    if (!img.naturalWidth || box.hidden) return;
+    box.style.width = '';
+    const full = box.parentElement.clientWidth; if (!full) return;   // 畫面還沒顯示
+    const maxH = Math.max(260, window.innerHeight * vh);
+    box.style.width = Math.min(full, maxH * img.naturalWidth / img.naturalHeight) + 'px';
+  };
+  img.addEventListener('load', fit); window.addEventListener('resize', fit);
+  return fit;
+}
+const fitMainPlan = fitPlan($('plan'), $('planimg'), 0.6);
+const fitMiniPlan = fitPlan($('sh-mini'), $('sh-miniimg'), 0.32);
