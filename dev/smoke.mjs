@@ -131,7 +131,13 @@ await page.click('#sh-nofix'); await page.click('#sh-nofix-go'); await page.wait
 ok((await toastText()).includes('不修的原因'), '不修必須填原因');
 await page.fill('#sh-reason', '屋主同意現況'); await page.click('#sh-nofix-go'); await page.waitForSelector('#sheet', { state: 'hidden' });
 d = await page.evaluate(() => window.__db.T.defects[1]);
-ok(d.status === 'closed' && d.close_type === '不修' && d.close_reason === '屋主同意現況', '不修結案並記錄原因');
+ok(d.status === 'fixed' && d.close_type === '不修' && d.close_reason === '屋主同意現況', '不修不直接結案：變成不修待確認');
+ok((await page.locator('#dlist .item').nth(1).textContent()).includes('不修待確認'), '清單顯示「不修待確認」');
+await page.locator('#dlist .item').nth(1).click(); await page.waitForSelector('#sheet:not([hidden])'); await page.waitForTimeout(150);
+ok((await page.textContent('#sh-pass')).includes('確認不修') && await page.locator('#sh-nofix').isHidden() && await page.locator('#sh-reopen').isVisible(), '待確認：有②確認不修、退回，沒有再按不修');
+await page.click('#sh-pass'); await page.waitForSelector('#sheet', { state: 'hidden' });
+d = await page.evaluate(() => window.__db.T.defects[1]);
+ok(d.status === 'closed' && d.close_type === '不修' && d.close_reason === '屋主同意現況', '驗收確認後不修結案並保留原因');
 
 // ---- 報表 ----
 await page.click('#t-report'); await page.waitForTimeout(400);

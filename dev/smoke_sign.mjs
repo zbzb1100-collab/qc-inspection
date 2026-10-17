@@ -67,5 +67,20 @@ P = await page.evaluate(() => window.__db.T.defect_photos.filter(p => p.kind ===
 ok(T[1].status === 'closed' && T[2].status === 'closed' && T[2].signed_name === null, '整戶簽認：其餘 2 筆結案（簽認人選填）');
 ok(P.length === 3 && P.includes(2) && P.includes(3), '整戶每筆都存簽名');
 ok(await page.locator('#unitsign').isHidden(), '簽完後整戶簽認區塊消失');
+// 需簽認類型：不修 → 確認 → 待簽認 → 簽名結案，close_type 保持不修
+await page.evaluate(() => { const T = window.__db.T; T.defects.push({ ...T.defects[0], id: 9, status: 'todo', close_type: null, close_reason: null, signed_name: null, description: 'nf' }); });
+await page.click('#go').catch(() => {}); await page.evaluate(() => renderFill()); await page.waitForTimeout(400);
+await page.locator('#dlist .item').nth(3).click(); await page.waitForSelector('#sheet:not([hidden])');
+await page.click('#sh-nofix'); await page.fill('#sh-reason', '客戶同意'); await page.click('#sh-nofix-go'); await page.waitForSelector('#sheet', { state: 'hidden' });
+await page.locator('#dlist .item').nth(3).click(); await page.waitForSelector('#sheet:not([hidden])');
+ok((await page.textContent('#sh-pass')).includes('確認不修（接著等客戶簽認）'), '簽認類型的確認不修要接著簽認');
+await page.click('#sh-pass'); await page.waitForSelector('#sheet', { state: 'hidden' });
+T = await page.evaluate(() => window.__db.T.defects.find(d => d.id === 9));
+ok(T.status === 'signing' && T.close_type === '不修', '確認不修後進待簽認');
+await page.locator('#dlist .item').nth(3).click(); await page.waitForSelector('#sheet:not([hidden])');
+ok((await page.textContent('#sh-closeinfo')).includes('已確認不修'), '待簽認畫面寫明是不修');
+await page.click('#sh-signgo'); await page.waitForSelector('#signpad:not([hidden])'); await draw(); await page.click('#sp-ok'); await page.waitForSelector('#sheet', { state: 'hidden' });
+T = await page.evaluate(() => window.__db.T.defects.find(d => d.id === 9));
+ok(T.status === 'closed' && T.close_type === '不修' && T.close_reason === '客戶同意', '簽名後以不修結案');
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);

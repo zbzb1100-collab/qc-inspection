@@ -145,7 +145,7 @@ function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清�
     const name = nm.value.trim() || null; let n = 0;
     for (const d of rows) {
       await uploadPhoto(d.id, 'sign', blob).catch(e => { throw new Error(errMsg(e) + `（已完成 ${n} 筆）`); });
-      const { data, error } = await sb.from('defects').update({ status: 'closed', close_type: '複驗合格', close_reason: null, signed_name: name, signed_date: dt.value || today() })
+      const { data, error } = await sb.from('defects').update({ status: 'closed', close_type: d.close_type || '複驗合格', close_reason: d.close_reason || null, signed_name: name, signed_date: dt.value || today() })
         .eq('id', d.id).eq('status', 'signing').select('id');
       if (error) throw new Error(errMsg(error) + `（已完成 ${n} 筆）`);
       n += data.length;
@@ -164,7 +164,7 @@ function drawList() {
     const t = el('div', 't');
     t.appendChild(el('b', null, `${M.name('categories', d.category_id) || '（未選工項）'}　${M.name('items', d.item_id)}`));
     t.appendChild(el('small', null, `${M.name('spaces', d.space_id) || '未選空間'}　修繕：${M.name('vendors', d.fix_vendor_id) || '—'}　責任：${M.name('vendors', d.resp_vendor_id) || '—'}`));
-    it.appendChild(t); it.appendChild(el('span', 'status ' + d.status, STATUS[d.status]));
+    it.appendChild(t); it.appendChild(el('span', 'status ' + d.status, statusText(d)));
     const open = () => openDefect(d, { no: i + 1, onDone: renderFill, canPlace: true, onPlace: startPlacing });
     it.onclick = open; it.onkeydown = e => { if (e.key === 'Enter') open(); };
     box.appendChild(it);

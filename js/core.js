@@ -161,10 +161,21 @@ async function fetchAll(makeQuery) {
   return out;
 }
 
-function showViewer(url) { $('viewer-img').src = url; $('viewer').hidden = false; }
-$('viewer').onclick = () => { $('viewer').hidden = true; };
+// 看大圖；onDelete 有給才出現「刪除」，要按兩次才算數
+function showViewer(url, onDelete) {
+  $('viewer-img').src = url; $('viewer').hidden = false;
+  const d = $('viewer-del'); d.hidden = !onDelete; delete d.dataset.arm; d.textContent = '刪除這張照片';
+  d.onclick = e => {
+    e.stopPropagation();
+    if (!d.dataset.arm) { d.dataset.arm = '1'; d.textContent = '再按一次確定刪除'; return; }
+    $('viewer').hidden = true; onDelete();
+  };
+}
+$('viewer').onclick = e => { if (e.target.id !== 'viewer-del') $('viewer').hidden = true; };
 
 const STATUS = { todo: '待修', fixed: '已修繕', signing: '待簽認', closed: '結案' };
+const isNofix = d => d.status === 'fixed' && d.close_type === '不修';   // 提出不修、等複驗確認
+const statusText = d => isNofix(d) ? '不修待確認' : STATUS[d.status];
 const needSign = typeId => !!(M.get('inspect_types', typeId) || {}).need_sign;   // 這個檢查類型複驗後要客戶簽認
 
 // 簽名板：回傳簽名 JPEG（白底黑字），取消回傳 null

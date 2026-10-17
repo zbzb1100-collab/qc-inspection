@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610170016">
+<link rel="stylesheet" href="css/app.css?v=202610170646">
 </head>
 <body>
 
@@ -136,9 +136,9 @@
       </div>
       <div id="sh-signwrap" hidden><label class="f">客戶簽名</label><div class="photos signs" id="sh-signimg"></div></div>
       <button class="btn ghost block" id="sh-reopen">複驗不合格／重新開啟，退回待修</button>
-      <button class="btn ghost block" id="sh-nofix">不修，直接結案</button>
+      <button class="btn ghost block" id="sh-nofix">不修（填原因，送驗收人員確認）</button>
       <textarea id="sh-reason" placeholder="不修原因（必填）" hidden></textarea>
-      <button class="btn danger block" id="sh-nofix-go" hidden>確認不修並結案</button>
+      <button class="btn danger block" id="sh-nofix-go" hidden>提出不修</button>
     </div>
 
     <div class="hint" id="sh-trail"></div>
@@ -151,7 +151,11 @@
 </div>
 
 <div id="print-root" aria-hidden="true"></div>
-<div class="overlay" id="viewer" hidden><img id="viewer-img" alt="照片"></div>
+<div class="overlay" id="viewer" hidden>
+  <div class="viewbox"><img id="viewer-img" alt="照片">
+    <div class="row viewbar"><button class="btn danger" id="viewer-del" type="button" hidden>刪除這張照片</button><button class="btn" id="viewer-close" type="button" style="flex:1">關閉</button></div>
+  </div>
+</div>
 <div class="overlay" id="signpad" hidden>
   <div class="signbox stack">
     <b id="sp-title">請客戶在框內簽名</b>
@@ -168,14 +172,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610170016"></script>
-<script src="js/core.js?v=202610170016"></script>
-<script src="js/pick.js?v=202610170016"></script>
-<script src="js/sheet.js?v=202610170016"></script>
-<script src="js/report.js?v=202610170016"></script>
-<script src="js/admin.js?v=202610170016"></script>
-<script src="js/admin_excel.js?v=202610170016"></script>
-<script src="js/admin_import.js?v=202610170016"></script>
-<script src="js/main.js?v=202610170016"></script>
+<script src="config.js?v=202610170646"></script>
+<script src="js/core.js?v=202610170646"></script>
+<script src="js/pick.js?v=202610170646"></script>
+<script src="js/sheet.js?v=202610170646"></script>
+<script src="js/report.js?v=202610170646"></script>
+<script src="js/admin.js?v=202610170646"></script>
+<script src="js/admin_excel.js?v=202610170646"></script>
+<script src="js/admin_import.js?v=202610170646"></script>
+<script src="js/main.js?v=202610170646"></script>
 </body>
 </html>

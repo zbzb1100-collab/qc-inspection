@@ -39,7 +39,7 @@ function initReportFilters() {
   multiSel('bld', idOpts(M.buildingsOf(siteId)), drawPlaceFilters);
   drawPlaceFilters();
   multiSel('cat', idOpts(M.list('categories')));
-  multiSel('status', Object.keys(STATUS).map(k => ({ v: k, t: STATUS[k] })));
+  multiSel('status', Object.keys(STATUS).map(k => ({ v: k, t: k === 'fixed' ? '已修繕／不修待確認' : STATUS[k] })));
   multiSel('fixv', idOpts(M.list('vendors')));
   multiSel('respv', idOpts(M.list('vendors')));
   // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
@@ -79,7 +79,7 @@ function drawReport() {
       `${M.name('vendors', d.fix_vendor_id) || '—'}\n${M.name('vendors', d.resp_vendor_id) || '—'}`].forEach(v => {
       const td = el('td', null, v); td.style.whiteSpace = 'pre-line'; tr.appendChild(td);
     });
-    const td = el('td'); td.appendChild(el('span', 'status ' + d.status, STATUS[d.status])); tr.appendChild(td);
+    const td = el('td'); td.appendChild(el('span', 'status ' + d.status, statusText(d))); tr.appendChild(td);
     tr.onclick = () => openDefect(d, { no: d.id, onDone: runReport });
     tb.appendChild(tr);
   });
@@ -106,7 +106,7 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
     d.id, M.name('sites', d.site_id), M.name('inspect_types', d.inspect_type_id), M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id),
     d.customer_name || '', M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
     M.name('repair_methods', d.repair_method_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id),
-    d.planned_date || '', d.fixed_date || '', STATUS[d.status], d.close_type || '', d.close_reason || '', d.signed_name || '', d.signed_date || '', d.description || '',
+    d.planned_date || '', d.fixed_date || '', statusText(d), d.close_type || '', d.close_reason || '', d.signed_name || '', d.signed_date || '', d.description || '',
     M.userName(d.created_by), fmtTime(d.created_at), M.userName(d.updated_by), fmtTime(d.updated_at),
     (cnt[d.id] || {}).before || 0, (cnt[d.id] || {}).after || 0]);
   const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
@@ -167,7 +167,7 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   const IMG_W = 170, IMG_H = 128;
   rows.forEach((d, r) => {
     const row = ws.addRow([d.id, M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id), M.name('spaces', d.space_id), M.name('categories', d.category_id),
-      M.name('items', d.item_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), STATUS[d.status], d.planned_date || '', d.fixed_date || '', d.description || '']);
+      M.name('items', d.item_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), statusText(d), d.planned_date || '', d.fixed_date || '', d.description || '']);
     row.alignment = { vertical: 'top', wrapText: true };
     const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
     if (has) row.height = IMG_H * 0.75 + 6;
@@ -222,7 +222,7 @@ $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
   rows.forEach(d => {
     const tr = el('tr');
     [d.id, `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`, M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
-      M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), `${d.planned_date || '—'}\n${d.fixed_date || '—'}`, STATUS[d.status] + (d.close_type ? `（${d.close_type}）` : ''), d.description || ''
+      M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), `${d.planned_date || '—'}\n${d.fixed_date || '—'}`, statusText(d) + (d.close_type && !isNofix(d) ? `（${d.close_type}）` : ''), d.description || ''
     ].forEach(v => { const td = el('td', null, String(v)); td.style.whiteSpace = 'pre-line'; tr.appendChild(td); });
     tb.appendChild(tr);
   });
@@ -247,7 +247,7 @@ $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   const imgs = [];
   rows.forEach(d => {
     const c = el('div', 'card');
-    c.appendChild(el('div', 'h', `#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${STATUS[d.status]}${d.close_type ? '・' + d.close_type : ''}］`));
+    c.appendChild(el('div', 'h', `#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${statusText(d)}${d.close_type && !isNofix(d) ? '・' + d.close_type : ''}］`));
     c.appendChild(el('div', null, `${M.name('categories', d.category_id)}　${M.name('items', d.item_id)}`));
     c.appendChild(el('div', 's', `修繕廠商：${M.name('vendors', d.fix_vendor_id) || '—'}　責任廠商：${M.name('vendors', d.resp_vendor_id) || '—'}　預計：${d.planned_date || '—'}　實際：${d.fixed_date || '—'}`));
     if (d.description) c.appendChild(el('div', 's', '說明：' + d.description));

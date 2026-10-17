@@ -231,3 +231,10 @@ th{font-family:var(--mono);letter-spacing:.06em}
 .ms-opt input{width:20px;height:20px;accent-color:var(--accent);flex-shrink:0}
 
 .plan{margin-inline:auto;max-width:100%}
+
+/* 照片：點開大圖才能刪，刪除先標記、可復原 */
+.viewbox{display:flex;flex-direction:column;gap:12px;align-items:center;max-width:100%;max-height:100%}
+.viewbox img{max-height:calc(100vh - 110px);object-fit:contain}
+.viewbar{width:100%;max-width:520px}
+.photos .ph.del img{opacity:.25;filter:grayscale(1)}
+.photos .ph .undo{position:absolute;top:0;left:0;right:auto;width:100%;height:100%;border-radius:8px;background:transparent;color:var(--todo);font-size:12px;font-weight:700;white-space:pre-line;border:2px dashed var(--todo)}
