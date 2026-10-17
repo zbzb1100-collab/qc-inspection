@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0d1626">
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610170652">
+<link rel="stylesheet" href="css/app.css?v=202610170659">
 </head>
 <body>
 
@@ -125,7 +125,7 @@
       <div class="hint" id="sh-closeinfo"></div>
       <div id="sh-fixdate-wrap"><label class="f">修繕完成日期（預帶今天，可改）</label><input type="date" id="sh-fixdate"></div>
       <div><label class="f">修繕後照片</label><div class="photos" id="sh-afterphotos"></div></div>
-      <button class="btn ghost block" id="sh-fixed">修繕完成（廠商修好了，等複驗）</button>
+      <button class="btn ghost block" id="sh-fixed">修繕完成（廠商修繕完成，待工務所驗收）</button>
       <button class="btn block" id="sh-pass">複驗合格，結案</button>
       <div id="sh-sign" class="stack" hidden>
         <div class="row">
@@ -136,7 +136,7 @@
       </div>
       <div id="sh-signwrap" hidden><label class="f">客戶簽名</label><div class="photos signs" id="sh-signimg"></div></div>
       <button class="btn ghost block" id="sh-reopen">複驗不合格／重新開啟，退回待修</button>
-      <button class="btn ghost block" id="sh-nofix">不修（填原因，送驗收人員確認）</button>
+      <button class="btn ghost block" id="sh-nofix">不修（填原因，待工務所驗收）</button>
       <textarea id="sh-reason" placeholder="不修原因（必填）" hidden></textarea>
       <button class="btn danger block" id="sh-nofix-go" hidden>提出不修</button>
     </div>
@@ -172,14 +172,14 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610170652"></script>
-<script src="js/core.js?v=202610170652"></script>
-<script src="js/pick.js?v=202610170652"></script>
-<script src="js/sheet.js?v=202610170652"></script>
-<script src="js/report.js?v=202610170652"></script>
-<script src="js/admin.js?v=202610170652"></script>
-<script src="js/admin_excel.js?v=202610170652"></script>
-<script src="js/admin_import.js?v=202610170652"></script>
-<script src="js/main.js?v=202610170652"></script>
+<script src="config.js?v=202610170659"></script>
+<script src="js/core.js?v=202610170659"></script>
+<script src="js/pick.js?v=202610170659"></script>
+<script src="js/sheet.js?v=202610170659"></script>
+<script src="js/report.js?v=202610170659"></script>
+<script src="js/admin.js?v=202610170659"></script>
+<script src="js/admin_excel.js?v=202610170659"></script>
+<script src="js/admin_import.js?v=202610170659"></script>
+<script src="js/main.js?v=202610170659"></script>
 </body>
 </html>
