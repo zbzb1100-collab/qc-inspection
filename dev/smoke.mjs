@@ -142,6 +142,12 @@ ok(d.status === 'closed' && d.close_type === '不修' && d.close_reason === '屋
 // ---- 報表 ----
 await page.click('#t-report'); await page.waitForTimeout(400);
 ok((await page.textContent('#st-all')) === '2' && (await page.textContent('#st-closed')) === '2', '報表統計');
+await page.click('.stat [data-st="todo"]'); await page.waitForTimeout(100);
+ok((await page.textContent('#rtable')).includes('沒有符合') && (await page.textContent('#st-all')) === '2', '點「待修」方塊：只列待修，統計數字不變');
+await page.click('.stat [data-st="closed"]'); await page.waitForTimeout(100);
+ok(await page.locator('#rtable tr').count() === 2 && (await page.textContent('#rnote')).includes('只顯示「結案」'), '點「結案」方塊：列出結案');
+await page.click('.stat [data-st="closed"]'); await page.waitForTimeout(100);
+ok(await page.locator('.stat > div.on').count() === 1 && (await page.textContent('#rnote')) === '', '再點一次回到全部');
 const pickF = async (k, v) => { await page.click(`#f-${k} .ms-btn`); await page.check(`#f-${k} input[value="${v}"]`); await page.click(`#f-${k} .ms-btn`); };
 await pickF('cat', '1'); await page.click('#f-go'); await page.waitForTimeout(300);
 ok((await page.textContent('#st-all')) === '1', '工項篩選');

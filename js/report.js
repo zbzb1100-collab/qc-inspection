@@ -1,5 +1,7 @@
 /* 報表：勾選條件查詢、匯出 Excel */
 let reportRows = [];
+let viewSt = null;   // 點上方統計方塊：只看某個狀態（在其他條件篩出來的結果裡再篩）
+const shownRows = () => viewSt ? reportRows.filter(r => r.status === viewSt) : reportRows;
 const RF = { itype: [], bld: [], floor: [], unit: [], cat: [], status: [], fixv: [], respv: [] };   // 每個條件可複選，空的＝全部
 const RF_ALL = { itype: '全部檢查類型', bld: '全部棟別', floor: '全部樓層', unit: '全部戶別', cat: '全部工項', status: '全部狀態', fixv: '全部修繕廠商', respv: '全部責任廠商' };
 
@@ -52,7 +54,7 @@ function drawPlaceFilters() {   // 樓層、戶別跟著選的棟別走
   multiSel('floor', floors.map(f => ({ v: f, t: f })).concat(extra.map(f => ({ v: f, t: f + '（已關閉）' }))));
   multiSel('unit', blds.flatMap(b => M.unitsOf(b.id).map(u => ({ v: u.id, t: u.code }))));
 }
-$('f-clear').onclick = () => { Object.keys(RF).forEach(k => { RF[k] = []; }); initReportFilters(); runReport(); };
+$('f-clear').onclick = () => { viewSt = null; Object.keys(RF).forEach(k => { RF[k] = []; }); initReportFilters(); runReport(); };
 $('f-go').onclick = e => guard(e.currentTarget, runReport);
 
 async function runReport() {
@@ -67,9 +69,10 @@ async function runReport() {
 }
 const SHOW_MAX = 300;
 function drawReport() {
-  const rows = reportRows;
-  $('st-all').textContent = rows.length;
-  ['todo', 'fixed', 'signing', 'closed'].forEach(k => { $('st-' + k).textContent = rows.filter(r => r.status === k).length; });   // 每筆同時只在一個狀態，四格加起來＝總數
+  $('st-all').textContent = reportRows.length;
+  ['todo', 'fixed', 'signing', 'closed'].forEach(k => { $('st-' + k).textContent = reportRows.filter(r => r.status === k).length; });   // 每筆同時只在一個狀態，四格加起來＝總數
+  document.querySelectorAll('.stat > div').forEach(d => d.classList.toggle('on', (d.dataset.st || null) === viewSt));
+  const rows = shownRows();
   const tb = $('rtable'); tb.innerHTML = '';
   rows.slice(0, SHOW_MAX).forEach(d => {
     const tr = el('tr'); tr.style.cursor = 'pointer';
@@ -83,8 +86,13 @@ function drawReport() {
     tb.appendChild(tr);
   });
   if (!rows.length) { const tr = el('tr'); const td = el('td', null, '沒有符合條件的缺失。'); td.colSpan = 5; tr.appendChild(td); tb.appendChild(tr); }
-  $('rnote').textContent = rows.length > SHOW_MAX ? `畫面只列前 ${SHOW_MAX} 筆，匯出 Excel 會包含全部 ${rows.length} 筆。` : '';
+  $('rnote').textContent = (viewSt ? `目前只顯示「${viewSt === 'fixed' ? '待複驗' : STATUS[viewSt]}」${rows.length} 筆（匯出也只匯出這些），點「總數」看全部。` : '') +
+    (rows.length > SHOW_MAX ? `畫面只列前 ${SHOW_MAX} 筆，匯出 Excel 會包含全部 ${rows.length} 筆。` : '');
 }
+document.querySelectorAll('.stat > div').forEach(d => {
+  d.onclick = () => { const k = d.dataset.st || null; viewSt = viewSt === k ? null : k; drawReport(); };
+  d.setAttribute('role', 'button'); d.tabIndex = 0; d.onkeydown = e => { if (e.key === 'Enter') d.onclick(); };
+});
 
 async function photoCounts(ids) {
   const cnt = {};
@@ -96,12 +104,12 @@ async function photoCounts(ids) {
   return cnt;
 }
 $('f-export').onclick = e => guard(e.currentTarget, async () => {
-  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
+  if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   if (!window.XLSX) throw new Error('匯出元件尚未載入，請稍後再試');
-  const cnt = await photoCounts(reportRows.map(r => r.id));
+  const cnt = await photoCounts(shownRows().map(r => r.id));
   const head = ['編號', '案場', '檢查類型', '棟別', '樓層', '戶別', '客戶名稱', '空間', '工項', '缺失內容', '修繕方式', '修繕廠商', '責任廠商',
     '預計修繕日', '實際修繕日', '狀態', '結案方式', '不修原因', '簽認人', '簽認日期', '缺失說明', '建立者', '建立時間', '最後修改者', '最後修改時間', '修繕前照片數', '修繕後照片數'];
-  const rows = reportRows.slice().sort((a, b) => a.id - b.id).map(d => [
+  const rows = shownRows().slice().sort((a, b) => a.id - b.id).map(d => [
     d.id, M.name('sites', d.site_id), M.name('inspect_types', d.inspect_type_id), M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id),
     d.customer_name || '', M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
     M.name('repair_methods', d.repair_method_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id),
@@ -127,10 +135,10 @@ function loadScriptOnce(src) {
 }
 const PHOTO_MAX_ROWS = 600, PHOTO_PER_KIND = 3;
 $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
-  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
+  if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const rows = reportRows.slice().sort((a, b) => a.id - b.id);
+  const rows = shownRows().slice().sort((a, b) => a.id - b.id);
   const ids = rows.map(r => r.id); let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await sb.from('defect_photos').select('id,defect_id,kind,path').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
@@ -197,6 +205,7 @@ function filterSummary() {
   add('狀態', nm('status', v => STATUS[v]));
   add('修繕廠商', nm('fixv', v => M.name('vendors', v)));
   add('責任廠商', nm('respv', v => M.name('vendors', v)));
+  if (viewSt) add('只看', viewSt === 'fixed' ? '待複驗' : STATUS[viewSt]);
   return parts.length ? parts.join('　') : '全部資料';
 }
 function printNow(landscape) {
@@ -212,8 +221,8 @@ function printHead(root, title, n) {
   root.appendChild(el('div', 'pmeta', `${fmtTime(new Date().toISOString())}　共 ${n} 筆　篩選：${filterSummary()}`));
 }
 $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
-  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
-  const root = $('print-root'); const rows = reportRows.slice().sort((a, b) => a.id - b.id);
+  if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
+  const root = $('print-root'); const rows = shownRows().slice().sort((a, b) => a.id - b.id);
   printHead(root, '品質查驗報表', rows.length);
   const t = el('table'); const th = el('thead'); const hr = el('tr');
   ['編號', '戶', '空間', '工項', '缺失內容', '修繕廠商', '責任廠商', '預計／實際修繕', '狀態', '缺失說明'].forEach(h => hr.appendChild(el('th', null, h)));
@@ -229,10 +238,10 @@ $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
   printNow(true);
 });
 $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
-  if (!reportRows.length) { toast('目前沒有資料可匯出'); return; }
+  if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const rows = reportRows.slice().sort((a, b) => a.id - b.id);
+  const rows = shownRows().slice().sort((a, b) => a.id - b.id);
   if (rows.length > 150) throw new Error(`含照片的 PDF 一次最多 150 筆，目前有 ${rows.length} 筆，請先縮小篩選條件（例如先選棟別或樓層）。`);
   const ids = rows.map(r => r.id); let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
