@@ -60,9 +60,8 @@ async function drawJobs(box) {
   const rf = el('button', 'btn ghost', '重新整理'); rf.onclick = () => guard(rf, () => drawJobs(box));
   head.append(h, rf); box.appendChild(head);
   if (!data.length) box.appendChild(el('p', 'hint', '還沒有上傳過報告。'));
-  const pick = new Set();   // 管理員勾選要立即轉檔的報告
-  if (isAdmin() && data.some(j => j.status === 'pending')) box.appendChild(urgentBar(pick, box));
-  data.forEach(j => box.appendChild(jobCard(j, box, pick)));
+  // 管理員「優先轉檔」先關掉（2026-10-19 LMS：排程沒有 API 觸發，不能馬上跑就意義不大）；開放後把 pick 傳進 jobCard、加回 urgentBar 即可
+  data.forEach(j => box.appendChild(jobCard(j, box)));
 }
 
 // 管理員：勾選待轉檔的報告 → 標成立即轉檔，並叫排程馬上跑（經 Supabase 的 fire-convert，鑰匙不放在網站）
