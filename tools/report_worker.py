@@ -117,8 +117,12 @@ def check(wd, quiet=False):
     have = set(os.listdir(os.path.join(wd, 'photos')))
     for n, r in enumerate(rows, 1):
         tag = f'第 {n} 列（{r["報告編號"] or "無編號"}）'
-        for k in ['棟別', '樓層', '戶別', '檢查類型']:
-            if r[k] != job['_label'][k]: errs.append(f'{tag} {k}「{r[k]}」跟上傳時選的「{job["_label"][k]}」不同')
+        if r['檢查類型'] != job['_label']['檢查類型']: errs.append(f'{tag} 檢查類型「{r["檢查類型"]}」跟上傳時選的「{job["_label"]["檢查類型"]}」不同')
+        if any(r[k] != job['_label'][k] for k in ['棟別', '樓層', '戶別']):   # 依報告改正戶別：要存在、要加註
+            b = next((b for b in L['buildings'] if b['name'] == r['棟別']), None)
+            if not b or r['樓層'] not in b['floors'] or r['戶別'] not in b['units']: errs.append(f'{tag} {r["棟別"]} {r["樓層"]} {r["戶別"]} 不在系統的棟別／樓層／戶別裡')
+            elif '戶別依報告改為' not in r['對應備註']: errs.append(f'{tag} 戶別跟上傳時選的不同，「對應備註」要寫「戶別依報告改為…（上傳時選…）」')
+            else: warns.append(f'{tag} 戶別依報告改為 {r["棟別"]} {r["樓層"]} {r["戶別"]}')
         if r['空間'] and r['空間'] not in L['spaces']: warns.append(f'{tag} 空間「{r["空間"]}」不在清單（預覽時會變黃色待補選）')
         c = cats.get(r['工項'])
         if r['工項'] and not c: warns.append(f'{tag} 工項「{r["工項"]}」不在清單')

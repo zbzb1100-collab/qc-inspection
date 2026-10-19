@@ -106,10 +106,13 @@ function imResolve(r, photos) {
   });
   o.flag = !!String(r['對應備註'] || '').trim();   // 有備註＝AI 不確定，整列都給下拉可改
   o.pick = { space: !sp || o.flag, cat: !c || o.flag, item: !it || o.flag };   // 對不到或有疑問的欄位，預覽時給下拉選
+  const UK = ['棟別', '樓層', '戶別'];
+  o.pick.unit = o.flag || o.bad.some(k => UK.includes(k));   // 戶別對不到或 AI 改過，預覽時可重選棟／樓／戶
+  if (o.pick.unit) { o.bad = o.bad.filter(k => !UK.includes(k)); if (!b) o.floor = null; else if (!b.floors.includes(o.floor)) o.floor = null; }
   o.on = !o.bad.length;
   return o;
 }
-const imReady = o => !o.bad.length && o.space_id && o.category_id && o.item_id;
+const imReady = o => !o.bad.length && o.building_id && o.floor && o.unit_id && o.space_id && o.category_id && o.item_id;
 
 // 預覽表：對不到的欄位給下拉補選，確認後逐筆寫入（Excel 匯入、報告轉檔共用）
 function imMountPreview(out, list, onDone) {
@@ -120,6 +123,21 @@ function imMountPreview(out, list, onDone) {
     s.onchange = () => { o[field] = s.value ? Number(s.value) : null; if (field === 'category_id') { o.item_id = null; o.pick.item = true;
       if (!imFind(M.list('vendors'), o.src['修繕廠商'])) { const v = o.category_id && M.vendorsOfCat(o.category_id)[0]; o.fix_vendor_id = v ? v.id : null; if (!imFind(M.list('vendors'), o.src['責任廠商'])) o.resp_vendor_id = o.fix_vendor_id; } } paint(); };
     return s;
+  }
+  // 棟／樓／戶三個下拉；改了會套用到同一個原始戶別的所有列（同一份報告一次改好）
+  function unitSel(o) {
+    const box = el('div', 'stack'), bs = el('select'), fs = el('select'), us = el('select');
+    const b = M.get('buildings', o.building_id);
+    fillSelect(bs, M.buildingsOf(S.sel.siteId), o.building_id, '（棟別）');
+    fillSelect(fs, b ? b.floors.map(f => ({ id: f, name: f })) : [], null, '（樓層）'); fs.value = o.floor || '';
+    fillSelect(us, b ? M.unitsOf(b.id) : [], o.unit_id, '（戶別）', u => u.code);
+    const key = x => `${x.src['棟別']}|${x.src['樓層']}|${x.src['戶別']}`, k = key(o);
+    const set = patch => { list.filter(x => x.pick.unit && key(x) === k).forEach(x => Object.assign(x, patch)); paint(); };
+    bs.onchange = () => set({ building_id: bs.value ? Number(bs.value) : null, floor: null, unit_id: null });
+    fs.onchange = () => set({ floor: fs.value || null });
+    us.onchange = () => set({ unit_id: us.value ? Number(us.value) : null });
+    [bs, fs, us].forEach(x => { x.style.minWidth = '6em'; box.appendChild(x); });
+    return box;
   }
   function paint() {
     out.innerHTML = '';
@@ -138,7 +156,10 @@ function imMountPreview(out, list, onDone) {
       const c0 = el('td'); const cb = el('input'); cb.type = 'checkbox'; cb.checked = o.on; cb.disabled = !!o.bad.length;
       cb.onchange = () => { o.on = cb.checked; paint(); }; c0.appendChild(cb); tr.appendChild(c0);
       const r = o.src;
-      tr.appendChild(el('td', null, `${r['棟別']} ${r['樓層']} ${r['戶別']}\n${r['檢查類型']}` + (o.bad.length ? `\n⚠ 對不到：${o.bad.join('、')}` : '')));
+      const cu = el('td');
+      if (o.pick.unit) { cu.appendChild(el('div', 'hint', '原文：' + `${r['棟別']} ${r['樓層']} ${r['戶別']}`)); cu.appendChild(unitSel(o)); cu.appendChild(document.createTextNode(r['檢查類型'] + (o.bad.length ? `\n⚠ 對不到：${o.bad.join('、')}` : ''))); }
+      else cu.textContent = `${r['棟別']} ${r['樓層']} ${r['戶別']}\n${r['檢查類型']}` + (o.bad.length ? `\n⚠ 對不到：${o.bad.join('、')}` : '');
+      tr.appendChild(cu);
       const cs = el('td'); cs.appendChild(o.pick.space ? cellSel(o, 'space_id', M.list('spaces')) : document.createTextNode(M.name('spaces', o.space_id))); tr.appendChild(cs);
       const cc = el('td'); cc.appendChild(o.pick.cat ? cellSel(o, 'category_id', M.list('categories')) : document.createTextNode(M.name('categories', o.category_id))); tr.appendChild(cc);
       const ci = el('td'); ci.appendChild(!(o.pick.item || o.pick.cat) ? document.createTextNode(M.name('items', o.item_id)) : (o.category_id ? cellSel(o, 'item_id', M.itemsOf(o.category_id)) : el('span', 'hint', '先選工項'))); tr.appendChild(ci);
@@ -178,7 +199,7 @@ function imMountPreview(out, list, onDone) {
 
 function renderImportAdmin(root) {
   const g = group('import', '缺失批次匯入', '驗屋報告轉好的 Excel（可連照片打包成 zip）'); root.appendChild(g.d);
-  g.body.appendChild(el('div', 'banner', '把驗屋報告整理成「缺失匯入」Excel，照片放在同一個 zip 裡（Excel 的「照片」欄寫檔名），選檔後會先預覽；黃色列是對不到清單的，請在該列選好空間／工項／缺失內容，或取消勾選略過。匯入的缺失都是「待修」，照片當修繕前照片，不標平面圖位置。'));
+  g.body.appendChild(el('div', 'banner', '把驗屋報告整理成「缺失匯入」Excel，照片放在同一個 zip 裡（Excel 的「照片」欄寫檔名），選檔後會先預覽；黃色列是對不到清單的，請在該列選好戶別／空間／工項／缺失內容，或取消勾選略過。匯入的缺失都是「待修」，照片當修繕前照片，不標平面圖位置。'));
   const row = el('div', 'row');
   const tp = el('button', 'btn ghost', '下載匯入範本'); tp.onclick = () => guard(tp, async () => {
     const buf = await (await imTemplate()).xlsx.writeBuffer();

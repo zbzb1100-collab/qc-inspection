@@ -52,20 +52,21 @@ ok(twb.getWorksheet('清單').getCell('A2').value === 'A棟' && tws.getColumn(7)
 
 await page.setInputFiles('#im-file', zp);
 await page.waitForSelector('#im-out table');
-ok(/共 3 列：可匯入 1　待補選 1/.test(await page.textContent('#im-out')), '預覽統計：' + (await page.textContent('#im-out p')));
+ok(/共 3 列：可匯入 1　待補選 2/.test(await page.textContent('#im-out')), '預覽統計：' + (await page.textContent('#im-out p')));
 ok(await page.locator('#im-go').isDisabled(), '有待補選時不能匯入');
-ok(await page.locator('#im-out tbody tr').nth(2).locator('input[type=checkbox]').isDisabled(), '戶別對不到的列不能勾');
+ok((await page.locator('#im-out tbody tr').nth(2).locator('select').nth(2).inputValue()) === '' && (await page.textContent('#im-out tbody tr:nth-child(3)')).includes('原文：A棟 8F Z9'), '戶別對不到的列給棟/樓/戶下拉重選');
 ok((await page.textContent('#im-out tbody tr:nth-child(2)')).includes('原文：99不存在'), '對不到的欄位顯示原文');
 // 補選：空間、工項、缺失內容
 const r2 = page.locator('#im-out tbody tr').nth(1);
-await r2.locator('select').nth(0).selectOption({ label: '前陽台' });
-await page.locator('#im-out tbody tr').nth(1).locator('select').nth(1).selectOption({ label: '10油漆' });
-await page.locator('#im-out tbody tr').nth(1).locator('select').nth(2).selectOption({ label: '牆面油漆不勻' });
-ok(/可匯入 2　待補選 0/.test(await page.textContent('#im-out p')), '補選後可匯入 2 筆');
+await r2.locator('select').nth(3).selectOption({ label: '前陽台' });
+await page.locator('#im-out tbody tr').nth(1).locator('select').nth(4).selectOption({ label: '10油漆' });
+await page.locator('#im-out tbody tr').nth(1).locator('select').nth(5).selectOption({ label: '牆面油漆不勻' });
+await page.locator('#im-out tbody tr').nth(2).locator('select').nth(2).selectOption({ label: 'A2' });
+ok(/可匯入 3　待補選 0/.test(await page.textContent('#im-out p')), '補選後可匯入 3 筆');
 await page.click('#im-go');
 await page.waitForSelector('#im-out .banner');
 const db = await page.evaluate(() => ({ d: window.__db.T.defects, p: window.__db.T.defect_photos }));
-ok(db.d.length === 2, '新增 2 筆缺失');
+ok(db.d.length === 3 && db.d[2].unit_id === 2 && db.d[2].floor === '8F', '新增 3 筆缺失（含重選戶別）');
 const a = db.d[0], b = db.d[1];
 ok(a.floor === '8F' && a.status === 'todo' && a.x == null && a.fix_vendor_id === 1 && a.resp_vendor_id === 1, '第一筆：待修、不標位置、廠商帶工項預設');
 ok(a.description === '窗框滲水（報告編號 L-1）', '說明附報告編號：' + a.description);

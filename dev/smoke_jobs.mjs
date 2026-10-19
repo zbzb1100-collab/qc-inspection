@@ -40,7 +40,7 @@ await page.evaluate(async () => {
   j.result = { rows: [
     { ...base, '空間': '客餐廳', '工項': '01防水', '缺失內容': '有漏水或滲水情況', '缺失說明': '窗框滲水', '照片': 'P-1.jpg、P-2.jpg', '報告編號': '1' },
     { ...base, '空間': '書房', '工項': '10油漆', '缺失內容': '牆面油漆不勻', '缺失說明': '牆面色差', '照片': '', '報告編號': '2', '對應備註': '空間對不到' },
-    { ...base, '空間': '客餐廳', '工項': '01防水', '缺失內容': '有漏水或滲水情況', '缺失說明': '門檻或門框不確定', '照片': '', '報告編號': '3', '對應備註': '不確定是門框還是門檻' }],
+    { ...base, '樓層': '3F', '戶別': 'A2', '空間': '客餐廳', '工項': '01防水', '缺失內容': '有漏水或滲水情況', '缺失說明': '門檻或門框不確定', '照片': '', '報告編號': '3', '對應備註': '戶別依報告改為 A棟 3F A2（上傳時選 A棟 8F A1）；不確定是門框還是門檻' }],
     skip: [['3', '插座面板歪斜', '已於現場改善']] };
   j.status = 'done'; j.message = '第 2 項空間不確定';
 });
@@ -52,13 +52,17 @@ await page.click('[data-job] button:has-text("確認匯入")'); await page.waitF
 ok((await page.textContent('[data-job] details summary')).includes('不匯入 1 項'), '顯示 AI 略過的項目');
 ok(/可匯入 2　待補選 1.*有疑問 2/.test(await page.textContent('[data-job] p.hint')), '預覽：2 筆可匯入、1 筆待補選、2 筆有疑問：' + await page.textContent('[data-job] p.hint'));
 const r3 = page.locator('[data-job] tbody tr').nth(2);
-ok((await r3.locator('select').count()) === 3 && (await r3.locator('select').nth(1).inputValue()) === '1', '有疑問的列：空間/工項/缺失內容都可下拉，且預選 AI 的答案');
-await r3.locator('select').nth(0).selectOption({ label: '前陽台' });
-await page.locator('[data-job] tbody tr').nth(1).locator('select').nth(0).selectOption({ label: '前陽台' });
+ok((await r3.locator('select').count()) === 6 && (await r3.locator('select').nth(4).inputValue()) === '1', '有疑問的列：棟/樓/戶與空間/工項/缺失內容都可下拉，且預選 AI 的答案');
+ok((await r3.locator('select').nth(1).inputValue()) === '3F' && (await r3.locator('select').nth(2).inputValue()) === '2', 'AI 改正的戶別預選報告上的 3F A2');
+await r3.locator('select').nth(3).selectOption({ label: '前陽台' });
+await page.locator('[data-job] tbody tr').nth(1).locator('select').nth(3).selectOption({ label: '前陽台' });
+await page.locator('[data-job] tbody tr').nth(1).locator('select').nth(1).selectOption('2F');
+ok((await page.locator('[data-job] tbody tr').nth(2).locator('select').nth(1).inputValue()) === '3F', '改第 2 列樓層不影響原文不同戶的第 3 列');
 await page.click('#im-go');
 await page.waitForFunction(() => window.__db.T.report_jobs[0].status === 'imported');
 db = await page.evaluate(() => ({ d: window.__db.T.defects, p: window.__db.T.defect_photos, j: window.__db.T.report_jobs[0] }));
 ok(db.d.length === 3 && db.d[2].space_id === 3 && db.d[1].space_id === 3 && db.d[0].description === '窗框滲水（報告編號 1）', '匯入 2 筆缺失（含補選空間）');
+ok(db.d[1].floor === '2F' && db.d[1].unit_id === 1 && db.d[2].floor === '3F' && db.d[2].unit_id === 2, '戶別：人工重選與 AI 改正都照預覽寫入');
 ok(db.p.length === 2 && db.p.every(p => p.kind === 'before' && p.defect_id === db.d[0].id), '照片從 reports 下載後存成修繕前照片');
 ok(db.j.imported_by === 'u-staff' && db.j.imported_at, '工作標記已匯入');
 await page.waitForFunction(() => document.querySelector('[data-job]') && document.querySelector('[data-job]').textContent.includes('已匯入'));
