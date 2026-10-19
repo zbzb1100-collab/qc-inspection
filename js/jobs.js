@@ -68,20 +68,21 @@ async function drawJobs(box) {
 // 管理員：勾選待轉檔的報告 → 標成立即轉檔，並叫排程馬上跑（經 Supabase 的 fire-convert，鑰匙不放在網站）
 function urgentBar(pick, listBox) {
   const bar = el('div', 'card stack'); bar.id = 'job-urgent';
-  bar.appendChild(el('small', 'hint', '管理員：勾選下面「待轉檔」的報告，按「立即轉檔」就不用等整點排程，通常幾分鐘內轉好。'));
-  const go = el('button', 'btn', '立即轉檔'); go.id = 'job-urgent-go';
-  const upd = () => { go.textContent = pick.size ? `立即轉檔（${pick.size} 份）` : '立即轉檔'; go.disabled = !pick.size; };
+  bar.appendChild(el('small', 'hint', '管理員：勾選下面「待轉檔」的報告按「優先轉檔」，下一次排程會先轉這幾份。'));
+  const go = el('button', 'btn', '優先轉檔'); go.id = 'job-urgent-go';
+  const upd = () => { go.textContent = pick.size ? `優先轉檔（${pick.size} 份）` : '優先轉檔'; go.disabled = !pick.size; };
   bar.update = upd; upd();
   go.onclick = () => guard(go, async () => {
     const ids = [...pick];
     const { error } = await sb.from('report_jobs').update({ urgent: true }).in('id', ids).eq('status', 'pending');
     if (error) throw (/urgent/.test(error.message) ? new Error('要先到 Supabase 執行 11_立即轉檔.sql') : error);
+    // 有部署 fire-convert（排程開放 API 觸發後）就馬上叫排程跑；沒有就等下一次整點，照樣先轉這幾份
     const r = await sb.functions.invoke('fire-convert', { body: {} });
-    if (r.error) {
-      let m = ''; try { m = (await r.error.context.json()).error; } catch (e) { /* 沒有回應內容 */ }
-      throw new Error('已排到最前面，但叫不動排程，會等整點再轉。' + (m || (/Failed to send|not found|404/i.test(r.error.message) ? '（Supabase 還沒部署 fire-convert）' : r.error.message)));
-    }
-    toast(`已開始轉檔 ${ids.length} 份，幾分鐘後按「重新整理」`); await drawJobs(listBox);
+    let m = '';
+    if (r.error) { try { m = (await r.error.context.json()).error; } catch (e) { /* 沒有部署或沒有回應內容 */ } }
+    toast(r.error ? `已排到最前面，下一次整點排程先轉這 ${ids.length} 份` + (m && !/還沒設定/.test(m) ? `（立即觸發失敗：${m}）` : '')
+      : `已開始轉檔 ${ids.length} 份，幾分鐘後按「重新整理」`);
+    await drawJobs(listBox);
   });
   bar.appendChild(go);
   return bar;
@@ -98,7 +99,7 @@ function jobCard(j, listBox, pick) {
     top.appendChild(cb);
   }
   top.append(t);
-  if (j.urgent && j.status === 'pending') top.appendChild(el('span', 'status todo', '立即'));
+  if (j.urgent && j.status === 'pending') top.appendChild(el('span', 'status todo', '優先'));
   top.append(st); c.appendChild(top);
   const who = (M.get('profiles', j.created_by) || {}).name || '';
   const n = j.result && j.result.rows ? j.result.rows.length : null;
