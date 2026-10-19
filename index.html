@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0d1626">
+<meta name="theme-color" content="#ffffff">
+<script>try{document.documentElement.dataset.skin=localStorage.getItem('qc-skin')||'pro'}catch(e){document.documentElement.dataset.skin='pro'}</script>
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610170933">
+<link rel="stylesheet" href="css/app.css?v=202610190055">
 </head>
 <body>
 
@@ -26,7 +27,9 @@
   <header class="topbar">
     <h1 id="title">品質查驗</h1>
     <span class="crumb" id="crumb"></span>
+    <button class="iconbtn" id="skinbtn" title="外觀" aria-label="切換外觀">外觀</button>
     <button class="iconbtn" id="userbtn" title="登出"></button>
+    <div class="skinpick" id="skinpick" hidden></div>
   </header>
 
   <main>
@@ -178,15 +181,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610170933"></script>
-<script src="js/core.js?v=202610170933"></script>
-<script src="js/pick.js?v=202610170933"></script>
-<script src="js/sheet.js?v=202610170933"></script>
-<script src="js/report.js?v=202610170933"></script>
-<script src="js/admin.js?v=202610170933"></script>
-<script src="js/admin_excel.js?v=202610170933"></script>
-<script src="js/admin_import.js?v=202610170933"></script>
-<script src="js/jobs.js?v=202610170933"></script>
-<script src="js/main.js?v=202610170933"></script>
+<script src="config.js?v=202610190055"></script>
+<script src="js/core.js?v=202610190055"></script>
+<script src="js/pick.js?v=202610190055"></script>
+<script src="js/sheet.js?v=202610190055"></script>
+<script src="js/report.js?v=202610190055"></script>
+<script src="js/admin.js?v=202610190055"></script>
+<script src="js/admin_excel.js?v=202610190055"></script>
+<script src="js/admin_import.js?v=202610190055"></script>
+<script src="js/jobs.js?v=202610190055"></script>
+<script src="js/main.js?v=202610190055"></script>
 </body>
 </html>

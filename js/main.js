@@ -54,3 +54,23 @@ async function enter(user) {
     if (data && data.session) await enter(data.session.user); else showLogin();
   } catch (e) { console.error(e); showLogin('無法連線：' + errMsg(e)); }
 })();
+
+// 外觀：每台裝置各自記住
+const SKINS = [['pro', '專業藍', '#2f5b8f'], ['soft', '清爽圓角', '#3478d4'], ['m3', 'Material', '#0f7c99'], ['tech', '科技感（深色）', '#22d3ee']];
+function setSkin(k) {
+  document.documentElement.dataset.skin = k;
+  try { localStorage.setItem('qc-skin', k); } catch (e) {}
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = k === 'tech' ? '#0d1626' : '#ffffff';
+}
+$('skinbtn').onclick = e => {
+  e.stopPropagation(); const p = $('skinpick');
+  if (!p.hidden) { p.hidden = true; return; }
+  p.innerHTML = '';
+  SKINS.forEach(([k, name, c]) => {
+    const b = el('button', document.documentElement.dataset.skin === k ? 'on' : null); const dot = el('i'); dot.style.background = c;
+    b.append(dot, name); b.onclick = () => { setSkin(k); p.hidden = true; }; p.appendChild(b);
+  });
+  p.hidden = false;
+};
+document.addEventListener('click', e => { const p = $('skinpick'); if (!p.hidden && !p.contains(e.target)) p.hidden = true; });
+setSkin(document.documentElement.dataset.skin || 'pro');
