@@ -88,7 +88,11 @@
     async signOut() { session = null; me = null; return { error: null }; },
     onAuthStateChange() { return { data: { subscription: { unsubscribe() {} } } }; }
   };
-  window.__mockSb = { from: builder, storage, auth };
-  window.__db = { T, files };
+  const fnCalls = [];   // functions.invoke 紀錄；__fnFail 設成訊息就模擬失敗
+  const functions = { async invoke(name, opt) { fnCalls.push({ name, body: opt && opt.body, by: me });
+    if (window.__fnFail) return { data: null, error: { message: 'Edge Function returned a non-2xx status code', context: { json: async () => ({ error: window.__fnFail }) } } };
+    return { data: { fired: 1 }, error: null }; } };
+  window.__mockSb = { from: builder, storage, auth, functions };
+  window.__db = { T, files, fnCalls };
   window.supabase = { createClient: () => window.__mockSb };
 })();

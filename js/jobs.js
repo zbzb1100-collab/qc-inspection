@@ -60,15 +60,46 @@ async function drawJobs(box) {
   const rf = el('button', 'btn ghost', '重新整理'); rf.onclick = () => guard(rf, () => drawJobs(box));
   head.append(h, rf); box.appendChild(head);
   if (!data.length) box.appendChild(el('p', 'hint', '還沒有上傳過報告。'));
-  data.forEach(j => box.appendChild(jobCard(j, box)));
+  const pick = new Set();   // 管理員勾選要立即轉檔的報告
+  if (isAdmin() && data.some(j => j.status === 'pending')) box.appendChild(urgentBar(pick, box));
+  data.forEach(j => box.appendChild(jobCard(j, box, pick)));
 }
 
-function jobCard(j, listBox) {
+// 管理員：勾選待轉檔的報告 → 標成立即轉檔，並叫排程馬上跑（經 Supabase 的 fire-convert，鑰匙不放在網站）
+function urgentBar(pick, listBox) {
+  const bar = el('div', 'card stack'); bar.id = 'job-urgent';
+  bar.appendChild(el('small', 'hint', '管理員：勾選下面「待轉檔」的報告，按「立即轉檔」就不用等整點排程，通常幾分鐘內轉好。'));
+  const go = el('button', 'btn', '立即轉檔'); go.id = 'job-urgent-go';
+  const upd = () => { go.textContent = pick.size ? `立即轉檔（${pick.size} 份）` : '立即轉檔'; go.disabled = !pick.size; };
+  bar.update = upd; upd();
+  go.onclick = () => guard(go, async () => {
+    const ids = [...pick];
+    const { error } = await sb.from('report_jobs').update({ urgent: true }).in('id', ids).eq('status', 'pending');
+    if (error) throw (/urgent/.test(error.message) ? new Error('要先到 Supabase 執行 11_立即轉檔.sql') : error);
+    const r = await sb.functions.invoke('fire-convert', { body: {} });
+    if (r.error) {
+      let m = ''; try { m = (await r.error.context.json()).error; } catch (e) { /* 沒有回應內容 */ }
+      throw new Error('已排到最前面，但叫不動排程，會等整點再轉。' + (m || (/Failed to send|not found|404/i.test(r.error.message) ? '（Supabase 還沒部署 fire-convert）' : r.error.message)));
+    }
+    toast(`已開始轉檔 ${ids.length} 份，幾分鐘後按「重新整理」`); await drawJobs(listBox);
+  });
+  bar.appendChild(go);
+  return bar;
+}
+
+function jobCard(j, listBox, pick) {
   const c = el('div', 'card stack'); c.dataset.job = j.id;
   const top = el('div', 'row'); top.style.alignItems = 'center';
   const t = el('b', null, `${M.name('buildings', j.building_id)} ${j.floor || ''} ${(M.get('units', j.unit_id) || {}).code || ''}　${M.name('inspect_types', j.inspect_type_id)}`); t.style.flex = '1';
   const st = el('span', 'status ' + ({ done: 'fixed', imported: 'closed', error: 'todo' }[j.status] || 'signing'), JOB_ST[j.status] || j.status);
-  top.append(t, st); c.appendChild(top);
+  if (pick && isAdmin() && j.status === 'pending') {
+    const cb = el('input'); cb.type = 'checkbox'; cb.dataset.urgent = j.id; cb.style.width = cb.style.height = '1.4em';
+    cb.onchange = () => { cb.checked ? pick.add(j.id) : pick.delete(j.id); const b = document.getElementById('job-urgent'); if (b) b.update(); };
+    top.appendChild(cb);
+  }
+  top.append(t);
+  if (j.urgent && j.status === 'pending') top.appendChild(el('span', 'status todo', '立即'));
+  top.append(st); c.appendChild(top);
   const who = (M.get('profiles', j.created_by) || {}).name || '';
   const n = j.result && j.result.rows ? j.result.rows.length : null;
   c.appendChild(el('small', 'hint', [j.file_name, j.vendor, who, String(j.created_at || '').slice(0, 16).replace('T', ' '), n != null ? `讀出 ${n} 筆` : ''].filter(Boolean).join('　')));

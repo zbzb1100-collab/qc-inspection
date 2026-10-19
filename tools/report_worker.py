@@ -83,7 +83,8 @@ def lists_for(api, job):
 
 def claim(wd):
     api = Api(); os.makedirs(wd, exist_ok=True)
-    jobs = api.rest('GET', 'report_jobs?select=*&status=eq.pending&order=created_at.asc&limit=1')
+    try: jobs = api.rest('GET', 'report_jobs?select=*&status=eq.pending&order=urgent.desc,created_at.asc&limit=1')   # 管理員要求立即轉檔的先做
+    except SystemExit: jobs = api.rest('GET', 'report_jobs?select=*&status=eq.pending&order=created_at.asc&limit=1')   # 還沒執行 11_立即轉檔.sql
     if not jobs:
         old = (datetime.now(timezone.utc) - STALE).isoformat()
         jobs = api.rest('GET', f'report_jobs?select=*&status=eq.processing&updated_at=lt.{urllib.parse.quote(old)}&order=created_at.asc&limit=1')
