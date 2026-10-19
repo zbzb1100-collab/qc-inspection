@@ -186,6 +186,7 @@ summary{font-size:18px}
 :root[data-skin="tech"] .card,:root[data-skin="tech"] .item,:root[data-skin="tech"] .admin-group,:root[data-skin="tech"] .tablewrap,:root[data-skin="tech"] .stat div{border-radius:var(--r)}
 :root[data-skin="tech"] label.f{font-family:var(--mono);font-size:12px;letter-spacing:.14em;color:var(--muted)}
 :root[data-skin="tech"] .chip{border-radius:6px;background:var(--surface)}
+:root[data-skin="tech"] .chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 :root[data-skin="tech"] .chip.on,:root[data-skin="tech"] .units button.on{box-shadow:0 0 12px rgba(34,211,238,.35)}
 :root[data-skin="tech"] .units button{background:var(--surface);font-family:var(--mono);border-radius:6px}
 :root[data-skin="tech"] .units button.on{background:rgba(34,211,238,.14);color:var(--accent);border-color:var(--accent)}
