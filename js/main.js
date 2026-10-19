@@ -16,12 +16,15 @@ SCREENS.forEach(s => $('t-' + s).onclick = () => {
 function showLogin(msg) {
   $('app').hidden = true; $('login').hidden = false; $('l-err').textContent = msg || ''; $('l-pass').value = '';
 }
+try { const m = localStorage.getItem('qc-email'); if (m) { $('l-email').value = m; $('l-remember').checked = true; } } catch (e) {}
+$('l-eye').onclick = () => { const p = $('l-pass'), show = p.type === 'password'; p.type = show ? 'text' : 'password'; $('l-eye').classList.toggle('on', show); $('l-eye').setAttribute('aria-label', show ? '隱藏密碼' : '顯示密碼'); };
 $('login-form').onsubmit = async e => {
   e.preventDefault();
   const btn = $('l-go'); $('l-err').textContent = '';
   await guard(btn, async () => {
     const { data, error } = await sb.auth.signInWithPassword({ email: $('l-email').value.trim(), password: $('l-pass').value });
     if (error) { $('l-err').textContent = /Invalid login/i.test(error.message) ? '帳號或密碼錯誤' : errMsg(error); return; }
+    try { if ($('l-remember').checked) localStorage.setItem('qc-email', $('l-email').value.trim()); else localStorage.removeItem('qc-email'); } catch (e) {}
     await enter(data.user);
   });
 };

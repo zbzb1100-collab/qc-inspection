@@ -97,9 +97,6 @@ th{color:var(--muted);font-weight:500;font-size:12px}
 .inline-add button{white-space:nowrap}
 .chip.off{opacity:.45;text-decoration:line-through}
 .chip.sel{outline:2px solid var(--accent)}
-.login{min-height:100%;display:flex;align-items:center;justify-content:center;padding:24px max(16px,env(safe-area-inset-left,0px))}
-.login .card{width:100%;max-width:380px}
-.login h1{margin:0 0 4px;font-size:22px}
 input[type=email],input[type=password],input[type=number]{width:100%;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);color:var(--ink)}
 .err{color:var(--todo);font-size:13px;min-height:18px}
 .overlay{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;padding:12px}
@@ -211,7 +208,6 @@ summary{font-size:18px}
 :root[data-skin="tech"] .sheet .panel{border-top:1px solid var(--accent);box-shadow:0 -8px 30px rgba(34,211,238,.12)}
 :root[data-skin="tech"] .toast{background:var(--accent);color:var(--accent-ink);font-family:var(--mono)}
 :root[data-skin="tech"] th{font-family:var(--mono);letter-spacing:.06em}
-:root[data-skin="tech"] .login h1{font-family:var(--mono);color:var(--accent)}
 :root[data-skin="tech"] .plan{background:#fff}
 
 /* ---- 待簽認（紫）---- */
@@ -273,8 +269,6 @@ summary{font-size:18px}
 :root:not([data-skin="tech"]) .stat div{padding:10px 4px}:root:not([data-skin="tech"]) .stat small{white-space:nowrap}
 :root:not([data-skin="tech"]) .sheet .panel{box-shadow:0 -8px 30px rgba(31,42,55,.15)}
 :root:not([data-skin="tech"]) .ms-panel{box-shadow:0 10px 30px rgba(31,42,55,.18)}
-:root:not([data-skin="tech"]) .login{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 14%,var(--bg)) 0%,var(--bg) 55%)}
-:root:not([data-skin="tech"]) .login h1{color:var(--accent);font-size:26px;letter-spacing:.06em}
 :root:not([data-skin="tech"]) label.f{text-transform:none;letter-spacing:.02em}
 :root:not([data-skin="tech"]) select,:root:not([data-skin="tech"]) input[type=date],:root:not([data-skin="tech"]) input[type=text],:root:not([data-skin="tech"]) textarea{background:var(--surface)}
 
@@ -312,3 +306,54 @@ summary{font-size:18px}
 .skinpick button{display:flex;align-items:center;gap:10px;background:none;border:0;padding:10px;border-radius:8px;cursor:pointer;text-align:left;color:var(--ink)}
 .skinpick button.on{background:color-mix(in srgb,var(--accent) 12%,transparent);font-weight:700}
 .skinpick i{width:22px;height:22px;border-radius:50%;flex-shrink:0;border:1px solid rgba(0,0,0,.1)}
+
+/* ---- 登入頁 ---- */
+:root{--sky1:#d9e2ec;--sky2:#f3f5f8;--bld-far:#c9d3de;--bld-mid:#aebccb;--bld-main:#e8edf2;--bld-edge:#8394a8;--win:#5d7189;--tree:#9fb3a3;--logo-ok:#16a34a}
+:root[data-skin="soft"]{--sky1:#cfe4f8;--sky2:#edf4fb;--bld-far:#d6e4f2;--bld-mid:#f2e6d8;--bld-main:#fbf7f1;--bld-edge:#b9a48c;--win:#7fa4c9;--tree:#7cbf73;--logo-ok:#2bae66}
+:root[data-skin="m3"]{--sky1:#d4e6f5;--sky2:#f2f6fa;--bld-far:#dbe6f0;--bld-mid:#c3d4e4;--bld-main:#f6f9fc;--bld-edge:#8ea6be;--win:#6d8fb3;--tree:#86b98a;--logo-ok:#2e7d32}
+:root[data-skin="tech"]{--sky1:#0a111e;--sky2:#0a111e;--bld-far:#0f1a2d;--bld-mid:#13213a;--bld-main:#16263f;--bld-edge:#22d3ee;--win:#22d3ee;--tree:#1b3b4a;--logo-ok:#34d399}
+.login{min-height:100%;display:flex;justify-content:center;background:linear-gradient(180deg,var(--sky1),var(--sky2) 60%,var(--bg));padding-block:0 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.login-wrap{width:100%;max-width:420px;display:flex;flex-direction:column;gap:0}
+.login-hero{position:relative;margin-inline:calc(-1 * max(16px,env(safe-area-inset-left,0px)));padding:0 max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column}
+.hero-art{display:block;width:100%;height:auto;max-height:34vh;margin-top:12px}
+.hero-art .h-far rect{fill:var(--bld-far)}
+.hero-art .h-mid rect{fill:var(--bld-mid)}
+.hero-art .h-main rect{fill:var(--bld-main);stroke:var(--bld-edge);stroke-width:1}
+.hero-art .h-win rect{fill:var(--win);opacity:.55}
+.hero-art .h-tree circle{fill:var(--tree)}
+.hero-art .h-crane path{fill:none;stroke:var(--bld-edge);stroke-width:2;opacity:.6}
+.hero-art .h-ground{fill:var(--bld-edge);opacity:.35}
+.hero-brand{display:flex;align-items:center;gap:12px;margin-top:18px}
+.hero-brand .logo{width:52px;height:52px;color:var(--accent);flex-shrink:0}
+.hero-brand .logo-ok{fill:var(--logo-ok)}
+.hero-brand h1{margin:0;font-size:28px;font-weight:700;letter-spacing:.08em;color:var(--ink);text-wrap:balance}
+.hero-brand .en{margin:2px 0 0;font-size:11px;letter-spacing:.18em;color:var(--muted)}
+.hero-tag{margin:8px 0 16px;color:var(--muted);font-size:15px}
+.login-card{width:100%;padding:20px;gap:14px}
+.login-card h2{margin:0 0 2px;font-size:20px}
+.lf{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface2);padding:0 12px;min-height:52px}
+.lf:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.lf svg{width:22px;height:22px;fill:none;stroke:var(--muted);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.lf input{flex:1;min-width:0;border:0!important;background:transparent!important;padding:12px 0!important;outline:none;color:var(--ink);box-shadow:none}
+.lf .eye{background:none;border:0;padding:6px;cursor:pointer;display:flex}
+.lf .eye.on svg{stroke:var(--accent)}
+.remember{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:15px;cursor:pointer}
+.remember input{width:18px;height:18px;accent-color:var(--accent)}
+.login-card .btn{min-height:52px;font-size:18px;display:flex;align-items:center;justify-content:center;gap:10px}
+.login-card .err:empty{display:none}
+.login-foot{margin:22px 0 0;text-align:center;color:var(--muted);font-size:15px;letter-spacing:.3em;display:flex;flex-direction:column;gap:4px}
+.login-foot small{font-size:10px;letter-spacing:.2em;opacity:.8}
+:root[data-skin="soft"] .lf{border-radius:16px}
+:root[data-skin="soft"] .login-card .btn{border-radius:16px}
+:root[data-skin="m3"] .lf{border-radius:12px;background:var(--surface)}
+:root[data-skin="tech"] .hero-brand h1{font-family:var(--mono);color:var(--accent)}
+:root[data-skin="tech"] .hero-art .h-main rect{stroke-width:1.2}
+:root[data-skin="tech"] .hero-art .h-win rect{opacity:.3}
+@media (min-width:900px){
+  .login{align-items:center}
+  .login-wrap{max-width:900px;display:grid;grid-template-columns:1.1fr 1fr;column-gap:40px;align-items:center}
+  .login-hero{margin:0;padding:0}
+  .hero-art{max-height:none}
+  .login-card{grid-column:2;grid-row:1}
+  .login-foot{grid-column:1 / -1}
+}
