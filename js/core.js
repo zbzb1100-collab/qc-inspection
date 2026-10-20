@@ -58,14 +58,13 @@ const M = {
     return all.filter(sp => ids.has(sp.id) || sp.name === '全室' || sp.id === keepId);
   },
   // floor 有給：只列這層有的戶別／使用空間（沒設定樓層＝每層都有）
-  // zid 有給：只列這一區的戶別／使用空間（同一棟可能兩區都有）
-  unitsOf: (bid, floor, zid) => M.list('units').filter(u => u.building_id === bid && (floor == null || !(u.floors || []).length || u.floors.includes(floor)) && (zid == null || M.unitZone(u) === zid)),
-  buildingsOf: (sid, zid) => M.list('buildings').filter(b => b.site_id === sid && (zid == null || M.bldZones(b).includes(zid))),
-  // 專有戶／公設：棟別可屬多區（沒設定＝第一區）；戶別屬一區（沒設定＝該棟的第一區）；檢查類型、工項可屬多區（沒勾＝每區都有）
-  bldZones: b => { if (!b) return []; if ((b.zone_ids || []).length) return b.zone_ids; const z = b.zone_id || (M.list('zones')[0] || {}).id; return z ? [z] : []; },
-  // 這棟在某一區的樓層：有分區設定就用它，沒有就用整棟的樓層
-  floorsOf: (b, zid) => { if (!b) return []; const zf = (b.zone_floors || {})[zid]; return zf && zf.length ? zf : b.floors; },
-  unitZone: u => u ? (u.zone_id || M.bldZones(M.get('buildings', u.building_id))[0] || null) : null,
+  unitsOf: (bid, floor) => M.list('units').filter(u => u.building_id === bid && (floor == null || !(u.floors || []).length || u.floors.includes(floor))),
+  buildingsOf: (sid, zid) => M.list('buildings').filter(b => b.site_id === sid && (zid == null || M.bldZone(b) === zid)),
+  // 專有戶／公設：一棟只屬一區（沒設定＝第一區），兩區可以各有同名的棟；戶別跟著棟；檢查類型、工項可屬多區（沒勾＝每區都有）
+  bldZone: b => b ? (b.zone_id || (M.list('zones')[0] || {}).id || null) : null,
+  // 兩區有同名的棟時，名稱後面加註區分（例：A棟（公設））
+  bldLabel: (b, list) => b.name + (list.some(x => x !== b && x.name === b.name) ? `（${M.name('zones', M.bldZone(b))}）` : ''),
+  unitZone: u => u ? M.bldZone(M.get('buildings', u.building_id)) : null,
   inZone: (r, zid) => !zid || !(r.zone_ids || []).length || r.zone_ids.includes(zid),
   typesOf: zid => M.list('inspect_types').filter(t => M.inZone(t, zid)),
   catsOf: zid => M.list('categories').filter(c => M.inZone(c, zid)),
@@ -75,16 +74,6 @@ const M = {
 // ---- 小工具 ----
 // 樓層輸入：逗號、頓號、空白、句點、斜線都當分隔；只打數字的補 F（1.2.R → 1F、2F、R）
 // 範圍用 ~：B1F~B3F → B1F、B2F、B3F；1~19 → 1F…19F。數字前後文字不同（R1F~PRF）就沒辦法展開，回傳 bad
-// 樓層排序用：B3F < B1F < 1F < 19F < R1F < PRF
-function floorRank(f) {
-  let m;
-  if ((m = /^B(\d+)/i.exec(f))) return -Number(m[1]);
-  if ((m = /^(\d+)/.exec(f))) return Number(m[1]);
-  if ((m = /^R(\d+)/i.exec(f))) return 1000 + Number(m[1]);
-  if (/^RF$/i.test(f)) return 1000;
-  if (/^P/i.test(f)) return 2000;
-  return 1500;
-}
 function parseFloors(str) {
   const out = [], bad = [];
   const fix = x => /^\d+$/.test(x) ? x + 'F' : x;

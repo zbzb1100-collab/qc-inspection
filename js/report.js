@@ -46,12 +46,14 @@ function initReportFilters() {
   // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
   sb.from('defects').select('building_id,floor').limit(5000).then(({ data }) => { if (!data) return; closedFloors = data; drawPlaceFilters(); });
 }
-const zoneBlds = () => M.buildingsOf(S.sel.siteId).filter(b => !RF.zone.length || RF.zone.some(z => M.bldZones(b).includes(z)));
+const zoneBlds = () => M.buildingsOf(S.sel.siteId).filter(b => !RF.zone.length || RF.zone.includes(M.bldZone(b)));
 const inZoneF = u => !RF.zone.length || RF.zone.includes(M.unitZone(u));
+// 兩區有同名的棟（例：專有戶、公設都有 A棟）時，清單上加註區分
+const bldOpts = blds => blds.map(b => ({ v: b.id, t: M.bldLabel(b, blds) }));
 function drawZoneFilters() {    // 檢查類型、棟別、工項跟著選的專有戶／公設走
   const inZ = r => !RF.zone.length || RF.zone.some(z => M.inZone(r, z));
   multiSel('itype', idOpts(M.list('inspect_types').filter(inZ)));
-  multiSel('bld', idOpts(zoneBlds()), drawPlaceFilters);
+  multiSel('bld', bldOpts(zoneBlds()), drawPlaceFilters);
   drawPlaceFilters();
   multiSel('cat', idOpts(M.list('categories').filter(inZ)));
 }

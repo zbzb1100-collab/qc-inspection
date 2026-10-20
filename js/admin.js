@@ -45,7 +45,7 @@ function unitFloorsEditor(body, u) {
   if (S.noZones) return;
   body.appendChild(el('label', 'f', `${u.code} 在哪幾層（全部不選＝每層都有）`));
   const cs = el('div', 'chips'); body.appendChild(cs);
-  const have = new Set(u.floors || []); const bf = M.floorsOf(b, M.unitZone(u));
+  const have = new Set(u.floors || []); const bf = b.floors;
   bf.forEach(f => {
     const c = el('button', 'chip' + (have.has(f) ? ' on' : ''), f); c.type = 'button';
     c.onclick = () => guard(c, async () => {
@@ -217,42 +217,25 @@ function renderAdmin() {
   // 1 棟別與樓層
   { const g = group('bld', '棟別與樓層', '選戶畫面的棟別、樓層'); root.appendChild(g.d);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId && (!zid || M.bldZones(b).includes(zid))), label: r => r.name,
-      onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i, ...(zid ? { zone_id: zid, zone_ids: [zid] } : {}) })))),
+    chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId && (!zid || M.bldZone(b) === zid)), label: r => r.name,
+      onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i, ...(zid ? { zone_id: zid } : {}) })))),
       placeholder: '新增棟別，例：G棟' });
     const b = M.get('buildings', adminSel.bld);
     if (b) {
       if (M.list('zones').length) {
-        const zr = el('div', 'stack'); zr.appendChild(el('label', 'f', `${b.name} 屬於（可兩邊都選）`)); const zc = el('div', 'chips'); zr.appendChild(zc);
+        const zr = el('div', 'stack'); zr.appendChild(el('label', 'f', `${b.name} 屬於（另一區也要 ${b.name} 的話，到那一區再新增一個同名的棟）`)); const zc = el('div', 'chips'); zr.appendChild(zc);
         M.list('zones').forEach(z => {
-          const cur = M.bldZones(b), on = cur.includes(z.id);   // 可兩區都選（例：A棟的戶別在專有戶、梯廳在公設）
-          const c = el('button', 'chip' + (on ? ' on' : ''), z.name); c.type = 'button';
-          c.onclick = () => guard(c, async () => {
-            const ids = on ? cur.filter(x => x !== z.id) : cur.concat(z.id);
-            if (!ids.length) throw new Error('至少要屬於一區');
-            const { error } = await sb.from('buildings').update({ zone_ids: ids, zone_id: ids[0] }).eq('id', b.id);
-            if (error) throw (/zone_ids/.test(error.message) ? new Error('要先到 Supabase 執行 13_棟別多區.sql') : error);
-            await reloadAdmin();
-          });
+          const c = el('button', 'chip' + (M.bldZone(b) === z.id ? ' on' : ''), z.name); c.type = 'button';   // 一棟只屬一區；兩區都要的，另一區再建一個同名的棟
+          c.onclick = () => guard(c, async () => { await q(sb.from('buildings').update({ zone_id: z.id }).eq('id', b.id)); await reloadAdmin(); });
           zc.appendChild(c);
         });
         if (M.list('zones').length > 1) g.body.appendChild(zr);
       }
-      // 這棟兩區都有時，樓層分開設定（存在 zone_floors；整棟 floors＝各區合起來，報表用）
-      const multi = zid && M.bldZones(b).length > 1;
-      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', multi ? `${b.name} 在「${M.name('zones', zid)}」的樓層（用「、」分隔，可寫範圍，例：2F~19F）` : `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
-      const fi = el('input'); fi.type = 'text'; fi.value = (multi ? M.floorsOf(b, zid) : b.floors).join('、'); fl.appendChild(fi);
+      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（用「、」分隔，可寫範圍，例：B1F~B3F、2F~19F）`));
+      const fi = el('input'); fi.type = 'text'; fi.value = b.floors.join('、'); fl.appendChild(fi);
       const sv = el('button', 'btn small', '儲存樓層'); sv.onclick = () => guard(sv, async () => {
         const floors = parseFloors(fi.value); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開，請一層一層列出，例：R1F、R2F、PRF`);
-        let patch = { floors: [...floors] };
-        if (multi) {
-          const zf = {}; M.bldZones(b).forEach(z => { zf[z] = z === zid ? [...floors] : M.floorsOf(b, z); });   // 另一區沒設定過的，先把目前的樓層固定下來
-          const all = Object.values(zf).flat();
-          patch = { zone_floors: zf, floors: [...new Set(all)].sort((x, y) => floorRank(x) - floorRank(y)) };
-        }
-        const { error } = await sb.from('buildings').update(patch).eq('id', b.id);
-        if (error) throw (/zone_floors/.test(error.message) ? new Error('要先到 Supabase 執行 14_分區樓層.sql') : error);
-        await reloadAdmin(); toast('樓層已更新');
+        await q(sb.from('buildings').update({ floors: [...floors] }).eq('id', b.id)); await reloadAdmin(); toast('樓層已更新');
       });
       fl.appendChild(sv);
       // 小工具：一次產生連續樓層，填進上面那格（按了還是要按「儲存樓層」）
@@ -268,14 +251,13 @@ function renderAdmin() {
 
   // 2 戶別
   { const g = group('unit', zid ? M.unitLabel(zid) : '戶別', zid ? '' : ''); root.appendChild(g.d);
-    const blds = M.list('buildings').filter(b => b.site_id === siteId && (!zid || M.bldZones(b).includes(zid)));
+    const blds = M.list('buildings').filter(b => b.site_id === siteId && (!zid || M.bldZone(b) === zid));
     if (!blds.find(b => b.id === adminSel.unitBld)) adminSel.unitBld = blds[0] && blds[0].id;
     const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
     g.body.appendChild(sel);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld && (!zid || M.unitZone(u) === zid)).sort(bySort), label: r => r.code,
-      onAdd: names => { const ub = M.get('buildings', adminSel.unitBld), zz = zid && ub && ub.zone_ids !== undefined ? { zone_id: zid } : {};   // 13_棟別多區.sql 執行後才有 units.zone_id
-        return q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i, ...zz })))); },
+    chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
+      onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i })))),
       placeholder: zid ? `新增${M.unitLabel(zid)}` : '新增戶別，例：A9' });
     const su = S.m.units.find(x => x.id === adminSel.unit); if (su) { unitFloorsEditor(g.body, su); unitSpacesEditor(g.body, su); }
     // 空間別總清單（新增、改名、圖面代號、排序、停用、合併）收在戶別裡面

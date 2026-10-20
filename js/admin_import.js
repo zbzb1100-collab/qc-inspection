@@ -85,7 +85,8 @@ async function imReadFile(f) {
 // 把一列文字對應到資料庫 id；對不到的欄位記在 bad
 function imResolve(r, photos) {
   const o = { src: r, bad: [], photoFiles: [], missingPhotos: [] };
-  const b = imFind(M.buildingsOf(S.sel.siteId), r['棟別']);
+  const z0 = (M.list('zones')[0] || {}).id, bl = M.buildingsOf(S.sel.siteId);
+  const b = imFind(bl.filter(x => M.bldZone(x) === z0).concat(bl.filter(x => M.bldZone(x) !== z0)), r['棟別']);   // 同名時先找專有戶的
   if (!b) o.bad.push('棟別'); o.building_id = b && b.id;
   o.floor = r['樓層'].toUpperCase();
   if (b && !b.floors.includes(o.floor)) o.bad.push('樓層');
@@ -128,7 +129,7 @@ function imMountPreview(out, list, onDone) {
   function unitSel(o) {
     const box = el('div', 'stack'), bs = el('select'), fs = el('select'), us = el('select');
     const b = M.get('buildings', o.building_id);
-    fillSelect(bs, M.buildingsOf(S.sel.siteId), o.building_id, '（棟別）');
+    { const bl = M.buildingsOf(S.sel.siteId); fillSelect(bs, bl, o.building_id, '（棟別）', b => M.bldLabel(b, bl)); }
     fillSelect(fs, b ? b.floors.map(f => ({ id: f, name: f })) : [], null, '（樓層）'); fs.value = o.floor || '';
     fillSelect(us, b ? M.unitsOf(b.id) : [], o.unit_id, '（戶別）', u => u.code);
     const key = x => `${x.src['棟別']}|${x.src['樓層']}|${x.src['戶別']}`, k = key(o);

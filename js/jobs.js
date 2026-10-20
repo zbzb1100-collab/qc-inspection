@@ -20,7 +20,7 @@ function jobForm() {
   const fi = el('input'); fi.type = 'file'; fi.accept = 'application/pdf,.pdf'; fi.id = 'job-file';
   [bld, flr, unit, typ].forEach(s => { s.style.width = '100%'; });
   bld.id = 'job-bld'; flr.id = 'job-floor'; unit.id = 'job-unit'; typ.id = 'job-type'; ven.id = 'job-vendor'; note.id = 'job-note';
-  fillSelect(bld, M.buildingsOf(S.sel.siteId), S.sel.bldId, '（選棟別）');
+  { const bl = M.buildingsOf(S.sel.siteId); fillSelect(bld, bl, S.sel.bldId, '（選棟別）', b => M.bldLabel(b, bl)); }
   fillSelect(typ, M.list('inspect_types'), S.sel.typeId, '（選檢查類型）');
   const refill = () => {
     const b = M.get('buildings', Number(bld.value));
