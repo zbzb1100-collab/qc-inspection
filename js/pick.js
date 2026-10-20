@@ -16,7 +16,7 @@ function normalizeSel() {
   const b = M.get('buildings', s.bldId);
   const floors = b ? b.floors : [];
   if (!floors.includes(s.floor)) s.floor = floors[0] || null;
-  const units = M.unitsOf(s.bldId, s.floor);
+  const units = M.unitsOf(s.bldId, s.floor, s.zoneId);
   if (!units.find(x => x.id === s.unitId)) s.unitId = null;
 }
 
@@ -42,7 +42,7 @@ async function renderPick() {
   });
   if (!b || !b.floors.length) fb.appendChild(el('span', 'hint', '此棟尚未設定樓層，請管理者到「管理」新增。'));
   const ub = $('units'); ub.innerHTML = '';
-  const units = M.unitsOf(s.bldId, s.floor);
+  const units = M.unitsOf(s.bldId, s.floor, s.zoneId);
   units.forEach(u => {
     const btn = el('button', u.id === s.unitId ? 'on' : '', u.code); btn.type = 'button'; btn.dataset.uid = u.id;
     btn.onclick = () => { s.unitId = u.id; saveSel(); renderPick(); };

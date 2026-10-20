@@ -819,3 +819,9 @@ drop policy if exists zones_read on public.zones;
 drop policy if exists zones_write on public.zones;
 create policy zones_read on public.zones for select to authenticated using (public.is_active_user());
 create policy zones_write on public.zones for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+-- ========== 13 棟別多區 ==========
+alter table public.buildings add column if not exists zone_ids bigint[] not null default '{}';   -- 這棟出現在哪幾區
+update public.buildings set zone_ids = array[zone_id] where zone_ids = '{}' and zone_id is not null;
+alter table public.units add column if not exists zone_id bigint references public.zones(id);   -- 這戶／使用空間屬於哪一區
+update public.units u set zone_id = b.zone_id from public.buildings b where u.building_id = b.id and u.zone_id is null;

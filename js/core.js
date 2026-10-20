@@ -58,10 +58,12 @@ const M = {
     return all.filter(sp => ids.has(sp.id) || sp.name === '全室' || sp.id === keepId);
   },
   // floor 有給：只列這層有的戶別／使用空間（沒設定樓層＝每層都有）
-  unitsOf: (bid, floor) => M.list('units').filter(u => u.building_id === bid && (floor == null || !(u.floors || []).length || u.floors.includes(floor))),
-  buildingsOf: (sid, zid) => M.list('buildings').filter(b => b.site_id === sid && (zid == null || M.zoneOf(b) === zid)),
-  // 專有戶／公設：棟別各屬一區（沒設定＝第一區）；檢查類型、工項可屬多區（沒勾＝每區都有）
-  zoneOf: b => (b && b.zone_id) || (M.list('zones')[0] || {}).id || null,
+  // zid 有給：只列這一區的戶別／使用空間（同一棟可能兩區都有）
+  unitsOf: (bid, floor, zid) => M.list('units').filter(u => u.building_id === bid && (floor == null || !(u.floors || []).length || u.floors.includes(floor)) && (zid == null || M.unitZone(u) === zid)),
+  buildingsOf: (sid, zid) => M.list('buildings').filter(b => b.site_id === sid && (zid == null || M.bldZones(b).includes(zid))),
+  // 專有戶／公設：棟別可屬多區（沒設定＝第一區）；戶別屬一區（沒設定＝該棟的第一區）；檢查類型、工項可屬多區（沒勾＝每區都有）
+  bldZones: b => { if (!b) return []; if ((b.zone_ids || []).length) return b.zone_ids; const z = b.zone_id || (M.list('zones')[0] || {}).id; return z ? [z] : []; },
+  unitZone: u => u ? (u.zone_id || M.bldZones(M.get('buildings', u.building_id))[0] || null) : null,
   inZone: (r, zid) => !zid || !(r.zone_ids || []).length || r.zone_ids.includes(zid),
   typesOf: zid => M.list('inspect_types').filter(t => M.inZone(t, zid)),
   catsOf: zid => M.list('categories').filter(c => M.inZone(c, zid)),

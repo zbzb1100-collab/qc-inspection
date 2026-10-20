@@ -46,7 +46,8 @@ function initReportFilters() {
   // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
   sb.from('defects').select('building_id,floor').limit(5000).then(({ data }) => { if (!data) return; closedFloors = data; drawPlaceFilters(); });
 }
-const zoneBlds = () => M.buildingsOf(S.sel.siteId).filter(b => !RF.zone.length || RF.zone.includes(M.zoneOf(b)));
+const zoneBlds = () => M.buildingsOf(S.sel.siteId).filter(b => !RF.zone.length || RF.zone.some(z => M.bldZones(b).includes(z)));
+const inZoneF = u => !RF.zone.length || RF.zone.includes(M.unitZone(u));
 function drawZoneFilters() {    // 檢查類型、棟別、工項跟著選的專有戶／公設走
   const inZ = r => !RF.zone.length || RF.zone.some(z => M.inZone(r, z));
   multiSel('itype', idOpts(M.list('inspect_types').filter(inZ)));
@@ -59,7 +60,7 @@ function drawPlaceFilters() {   // 樓層、戶別跟著選的棟別走
   const floors = [...new Set(blds.flatMap(b => b.floors))];
   const ids = blds.map(b => b.id), extra = [...new Set(closedFloors.filter(d => ids.includes(d.building_id)).map(d => d.floor))].filter(f => !floors.includes(f));
   multiSel('floor', floors.map(f => ({ v: f, t: f })).concat(extra.map(f => ({ v: f, t: f + '（已關閉）' }))));
-  multiSel('unit', blds.flatMap(b => M.unitsOf(b.id).map(u => ({ v: u.id, t: u.code }))));
+  multiSel('unit', blds.flatMap(b => M.unitsOf(b.id).filter(inZoneF).map(u => ({ v: u.id, t: u.code }))));
 }
 $('f-clear').onclick = () => { viewSt = null; Object.keys(RF).forEach(k => { RF[k] = []; }); initReportFilters(); runReport(); };
 $('f-go').onclick = e => guard(e.currentTarget, runReport);
@@ -69,7 +70,7 @@ async function runReport() {
   const mk = () => {
     let q = sb.from('defects').select('*').order('id', { ascending: false });
     Object.keys(col).forEach(k => { if (RF[k].length) q = q.in(col[k], RF[k]); });
-    if (RF.zone.length && !RF.bld.length) q = q.in('building_id', zoneBlds().map(b => b.id).concat(-1));
+    if (RF.zone.length && !RF.unit.length) q = q.in('unit_id', S.m.units.filter(inZoneF).map(u => u.id).concat(-1));   // 同一棟可能兩區都有，用戶別分
     return q;
   };
   reportRows = await fetchAll(mk);
