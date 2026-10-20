@@ -11,8 +11,10 @@ const XL_SHEETS = {
 };
 // 有「專有戶／公設」時，棟別樓層、戶別前面多一欄「區分」（兩區可以有同名的棟）；舊檔沒有這欄＝都算第一區
 const xlZoned = () => M.list('zones', false).length > 0;
-const XL_OPT = new Set(['區分']);
-const xlHead = k => (xlZoned() && (k === 'bld' || k === 'unit') ? ['區分'] : []).concat(XL_SHEETS[k][1]);
+const xlOpt = (k, h) => h === '區分' || (k === 'unit' && h === '樓層');   // 新加的欄位：舊檔沒有也能匯入（沒有＝不動）
+const xlHead = k => { const h = (xlZoned() && ['bld', 'unit', 'itype', 'cat'].includes(k) ? ['區分'] : []).concat(XL_SHEETS[k][1]);
+  if (xlZoned() && k === 'unit') h.splice(h.indexOf('戶別') + 1, 0, '樓層'); return h; };
+const xlZoneList = r => (r.zone_ids || []).map(z => M.name('zones', z)).filter(Boolean).join('、');   // 檢查類型、工項：空白＝每區都出現
 const xlZoneName = b => xlZoned() ? M.name('zones', M.bldZone(b)) : '';
 const xlBKey = (zn, n) => xlZoned() ? zn + ' ' + n : n;            // 棟別在檔案裡的辨識名稱
 let xlSync = false;                 // 「完整同步」：Excel 沒列出的項目也處理
@@ -42,6 +44,8 @@ function xlHelpRows() {
     ['7. 工項的「預設廠商」可填多家，用「、」分隔；廠商必須已在「廠商」表；已設的對應不會被移除。'],
     ['8. 平面圖照片不在這裡，請到「管理 → 平面圖」批次上傳。'],
     ['9. 棟別樓層、戶別的「區分」欄填 專有戶 或 公設；兩區可以有同名的棟（例：兩邊都有 A棟）。留空＝專有戶。'],
+    ['10. 戶別的「樓層」：這戶或使用空間出現在哪幾層（例：1F，或 B1F~B3F）；留空＝這棟每層都有。'],
+    ['11. 檢查類型、工項的「區分」：用在哪一區，兩區都用填「專有戶、公設」；留空＝兩區都出現。'],
     [''],
     ['範例（棟別樓層）：'],
     ['棟別', '樓層', '排序', '狀態'],
@@ -59,21 +63,22 @@ function xlBuildBook(withData) {
     bld: blds.map(b => (xlZoned() ? [xlZoneName(b)] : []).concat([b.name, b.floors.join('、'), b.sort, xlState(b.active)])),
     unit: S.m.units.filter(u => bIds.has(u.building_id)).slice()
       .sort((a, b) => (M.get('buildings', a.building_id).sort - M.get('buildings', b.building_id).sort) || bySort(a, b))
-      .map(u => (xlZoned() ? [xlZoneName(M.get('buildings', u.building_id))] : []).concat([M.name('buildings', u.building_id), u.code, u.sort, xlState(u.active)])),
+      .map(u => xlZoned() ? [xlZoneName(M.get('buildings', u.building_id)), M.name('buildings', u.building_id), u.code, (u.floors || []).join('、'), u.sort, xlState(u.active)]
+        : [M.name('buildings', u.building_id), u.code, u.sort, xlState(u.active)]),
     space: S.m.spaces.slice().sort((a, b) => a.inspect_type_id - b.inspect_type_id || bySort(a, b))
       .map(s => [M.name('inspect_types', s.inspect_type_id), s.name, s.code && s.code !== '0' ? s.code : '', s.sort, xlState(s.active)]),
-    cat: M.list('categories', false).map(c => [c.name, S.m.category_vendors.filter(x => x.category_id === c.id).sort((a, b) => a.sort - b.sort)
-      .map(x => M.name('vendors', x.vendor_id)).filter(Boolean).join('、'), c.sort, xlState(c.active)]),
+    cat: M.list('categories', false).map(c => (xlZoned() ? [xlZoneList(c)] : []).concat([c.name, S.m.category_vendors.filter(x => x.category_id === c.id).sort((a, b) => a.sort - b.sort)
+      .map(x => M.name('vendors', x.vendor_id)).filter(Boolean).join('、'), c.sort, xlState(c.active)])),
     item: S.m.items.slice().sort((a, b) => (M.get('categories', a.category_id).sort - M.get('categories', b.category_id).sort) || bySort(a, b))
       .map(i => [M.name('categories', i.category_id), i.name, i.sort, xlState(i.active)]),
     vendor: M.list('vendors', false).map(v => [v.name, xlState(v.active)]),
     method: M.list('repair_methods', false).map(r => [r.name, r.sort, xlState(r.active)]),
-    itype: M.list('inspect_types', false).map(r => [r.name, r.sort, xlState(r.active)]),
+    itype: M.list('inspect_types', false).map(r => (xlZoned() ? [xlZoneList(r)] : []).concat([r.name, r.sort, xlState(r.active)])),
   };
   Object.keys(XL_SHEETS).forEach(k => {
     const name = XL_SHEETS[k][0], head = xlHead(k);
     const ws = XLSX.utils.aoa_to_sheet([head].concat(withData ? D[k] : []));
-    ws['!cols'] = head.map(h => ({ wch: h === '樓層' || h === '預設廠商' ? 36 : 16 }));
+    ws['!cols'] = head.map(h => ({ wch: h === '樓層' || h === '預設廠商' ? 36 : 16 }));   // 欄位順序跟 xlHead 一致
     XLSX.utils.book_append_sheet(wb, ws, name);
   });
   return wb;
@@ -88,7 +93,7 @@ function xlRead(wb) {
     const rows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false }).map(r => {
       const o = {}; Object.keys(r).forEach(c => { o[String(c).trim()] = String(r[c]).trim(); }); return o;
     }).filter(r => Object.values(r).some(v => v !== ''));
-    out[k] = { rows, missing: head.filter(h => !XL_OPT.has(h) && !(rows.length ? h in rows[0] : true)), hasZone: !!rows.length && '區分' in rows[0] };
+    out[k] = { rows, missing: head.filter(h => !xlOpt(k, h) && !(rows.length ? h in rows[0] : true)), hasZone: !!rows.length && '區分' in rows[0], hasFloors: !!rows.length && '樓層' in rows[0] };
   });
   return out;
 }
@@ -141,6 +146,9 @@ function xlCompute(stage, data, pend) {
   const rowZone = r => { if (!zones.length) return null; const zn = r['區分'] || zone0.name, z = zones.find(x => x.name === zn); if (!z) throw new Error('區分「' + zn + '」不存在'); return z; };
   const bldOf = (z, n) => bldRows().find(b => b.name === n && (!z || M.bldZone(b) === z.id));
   const findB = (z, n) => bldOf(z, n) || (pend.bld.has(xlBKey(z && z.name, n)) ? { id: null } : (() => { throw new Error('找不到棟別「' + (z && zones.length > 1 ? z.name + ' ' : '') + n + '」'); })());
+  // 「區分」欄（檢查類型、工項）：多區用「、」分隔；空白＝每區都出現；舊檔沒有這欄＝不動
+  const zoneIds = (k, r) => { if (!zones.length || !(data[k] && data[k].hasZone)) return undefined;
+    return splitNames(r['區分'] || '').map(zn => { const z = zones.find(x => x.name === zn); if (!z) throw new Error('區分「' + zn + '」不存在'); return z.id; }); };
   const inScope = k => b => !zones.length || (data[k] && data[k].hasZone) || M.bldZone(b) === zone0.id;   // 舊檔沒有「區分」欄：完整同步只處理第一區
   const findT = n => S.m.inspect_types.find(t => t.name === n) || (pend.itype.has(n) ? { id: null } : (() => { throw new Error('找不到檢查類型「' + n + '」'); })());
   const findC = n => S.m.categories.find(c => c.name === n) || (pend.cat.has(n) ? { id: null } : (() => { throw new Error('找不到工項「' + n + '」'); })());
@@ -149,7 +157,7 @@ function xlCompute(stage, data, pend) {
   switch (stage) {
     case 'itype': return xlStage('檢查類型', 'inspect_types', rowsOf('itype'), { scope: () => S.m.inspect_types.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.itype.has(e.id), row: r => {
       const n = need(r, '檢查類型'), ex = S.m.inspect_types.find(t => t.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
-      return { k: n, nm: n, ex, base: { sort: ns('it', S.m.inspect_types), active: true }, want: { name: n, sort: s, active: a } };
+      return { k: n, nm: n, ex, base: { sort: ns('it', S.m.inspect_types), active: true }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('itype', r) } };
     } });
     case 'method': return xlStage('修繕方式', 'repair_methods', rowsOf('method'), { scope: () => S.m.repair_methods.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.method.has(e.id), row: r => {
       const n = need(r, '修繕方式'), ex = S.m.repair_methods.find(t => t.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
@@ -172,7 +180,14 @@ function xlCompute(stage, data, pend) {
       const z = rowZone(r), bn = xlBKey(z && z.name, need(r, '棟別')), code = need(r, '戶別'), b = findB(z, r['棟別']), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const ex = b.id == null ? null : S.m.units.find(u => u.building_id === b.id && u.code === code);
       const mine = S.m.units.filter(u => u.building_id === b.id);
-      return { k: bn + '|' + code, nm: bn + ' ' + code, ex, base: { building_id: b.id, sort: ns('u' + b.id, mine), active: true }, want: { code, sort: s, active: a } };
+      // 樓層：這戶（使用空間）出現在哪幾層；空白＝每層都有；舊檔沒有這欄＝不動
+      let fl; if (zones.length && data.unit && data.unit.hasFloors) {
+        fl = parseFloors(r['樓層'] || ''); if (fl.bad.length) throw new Error(`樓層「${fl.bad.join('、')}」沒辦法自動展開`);
+        const bf = b.id == null ? null : M.get('buildings', b.id).floors, no = bf ? fl.filter(f => !bf.includes(f)) : [];
+        if (no.length) throw new Error(`${r['棟別']} 沒有 ${no.join('、')}，請先在「棟別樓層」加上這層`);
+        fl = [...fl];
+      }
+      return { k: bn + '|' + code, nm: bn + ' ' + code, ex, base: { building_id: b.id, sort: ns('u' + b.id, mine), active: true }, want: { code, floors: fl, sort: s, active: a } };
     } });
     case 'space': return xlStage('空間別', 'spaces', rowsOf('space'), { scope: () => S.m.spaces.map(e => ({ ex: e, k: M.name('inspect_types', e.inspect_type_id) + '|' + e.name, nm: M.name('inspect_types', e.inspect_type_id) + ' ' + e.name })), used: e => XL_USE.space.has(e.id), row: r => {
       const tn = need(r, '檢查類型'), n = need(r, '空間別'), t = findT(tn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
@@ -183,7 +198,7 @@ function xlCompute(stage, data, pend) {
     } });
     case 'cat': return xlStage('工項', 'categories', rowsOf('cat'), { scope: () => S.m.categories.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.cat.has(e.id), row: r => {
       const n = need(r, '工項'), ex = S.m.categories.find(c => c.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
-      return { k: n, nm: n, ex, base: { sort: ns('c', S.m.categories), active: true }, want: { name: n, sort: s, active: a } };
+      return { k: n, nm: n, ex, base: { sort: ns('c', S.m.categories), active: true }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('cat', r) } };
     } });
     case 'item': return xlStage('缺失內容', 'items', rowsOf('item'), { scope: () => S.m.items.map(e => ({ ex: e, k: M.name('categories', e.category_id) + '|' + e.name, nm: M.name('categories', e.category_id) + ' ／ ' + e.name })), used: e => XL_USE.item.has(e.id), row: r => {
       const cn = need(r, '工項'), n = need(r, '缺失內容'), c = findC(cn), s = xlSort(r['排序']), a = xlActive(r['狀態']);

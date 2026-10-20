@@ -52,6 +52,27 @@ await page.locator('#xl-file').setInputFiles(p2); await page.waitForSelector('#x
 const db = await page.evaluate(() => window.__db.T);
 ok(db.units.find(u => u.code === '走廊').building_id === 9, 'Excel 新增的使用空間掛到公設的 A棟');
 ok(db.buildings.find(b => b.id === 9).floors.join() === '1F,2F,R1F' && db.buildings.find(b => b.id === 1).floors.join() === '2F,3F,8F', 'Excel 改公設 A棟 樓層不影響專有戶 A棟');
+// 使用空間樓層、檢查類型與工項的區分
+const wb3 = XLSX.readFile(p2);
+const un3 = XLSX.utils.sheet_to_json(wb3.Sheets['戶別'], { header: 1 });
+ok(un3[0].join() === '區分,棟別,戶別,樓層,排序,狀態', '戶別欄位：' + un3[0].join());
+const [dl2] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("匯出目前設定")').click()]);
+const p4 = '/tmp/claude-0/xl/zexp2.xlsx'; await dl2.saveAs(p4);
+const wb4 = XLSX.readFile(p4);
+ok(XLSX.utils.sheet_to_json(wb4.Sheets['檢查類型'], { header: 1 })[0].join() === '區分,檢查類型,排序,狀態', '檢查類型有區分欄');
+const setCell = (sh, match, col, v) => { const ws = wb4.Sheets[sh]; const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }); const i = rows.findIndex(match); ws[col + (i + 1)] = { t: 's', v }; };
+setCell('戶別', r => r[2] === '梯廳', 'D', 'R1F');
+setCell('檢查類型', r => r[1] === '交屋檢查', 'A', '專有戶、公設');
+setCell('工項', r => r[1] === '10油漆', 'A', '公設');
+const p5 = '/tmp/claude-0/xl/zin2.xlsx'; XLSX.writeFile(wb4, p5);
+await page.locator('#xl-file').setInputFiles(p5); await page.waitForSelector('#xl-go'); await page.click('#xl-go'); await page.waitForTimeout(800);
+const db5 = await page.evaluate(() => window.__db.T);
+ok(JSON.stringify(db5.units.find(u => u.code === '梯廳').floors) === '["R1F"]', 'Excel 設定使用空間樓層');
+ok(JSON.stringify(db5.inspect_types[0].zone_ids) === '[1,2]' && JSON.stringify(db5.categories[1].zone_ids) === '[2]', 'Excel 設定檢查類型、工項的區分');
+setCell('戶別', r => r[2] === '梯廳', 'D', '9F');
+const p6 = '/tmp/claude-0/xl/zin3.xlsx'; XLSX.writeFile(wb4, p6);
+await page.locator('#xl-file').setInputFiles(p6); await page.waitForTimeout(400);
+ok((await page.textContent('#xl-out')).includes('沒有 9F'), '使用空間樓層不在棟別樓層裡會提示');
 // 舊格式（沒有區分欄）也能匯入，算專有戶
 const old = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(old, XLSX.utils.aoa_to_sheet([['棟別', '戶別', '排序', '狀態'], ['A棟', 'A9', '', '']]), '戶別');
 const p3 = '/tmp/claude-0/xl/zold.xlsx'; XLSX.writeFile(old, p3);
