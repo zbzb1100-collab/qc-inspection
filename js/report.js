@@ -2,8 +2,8 @@
 let reportRows = [];
 let viewSt = null;   // 點上方統計方塊：只看某個狀態（在其他條件篩出來的結果裡再篩）
 const shownRows = () => viewSt ? reportRows.filter(r => r.status === viewSt) : reportRows;
-const RF = { itype: [], bld: [], floor: [], unit: [], cat: [], status: [], fixv: [], respv: [] };   // 每個條件可複選，空的＝全部
-const RF_ALL = { itype: '全部檢查類型', bld: '全部棟別', floor: '全部樓層', unit: '全部戶別', cat: '全部工項', status: '全部狀態', fixv: '全部修繕廠商', respv: '全部責任廠商' };
+const RF = { zone: [], itype: [], bld: [], floor: [], unit: [], cat: [], status: [], fixv: [], respv: [] };   // 每個條件可複選，空的＝全部
+const RF_ALL = { zone: '專有戶＋公設', itype: '全部檢查類型', bld: '全部棟別', floor: '全部樓層', unit: '全部戶別', cat: '全部工項', status: '全部狀態', fixv: '全部修繕廠商', respv: '全部責任廠商' };
 
 // 複選下拉：按鈕顯示已選項目，點開是勾選清單
 function multiSel(key, opts, onChange) {
@@ -36,19 +36,26 @@ document.addEventListener('click', e => { if (!e.target.closest('.ms')) document
 const idOpts = rows => rows.map(r => ({ v: r.id, t: r.name }));
 let closedFloors = [];
 function initReportFilters() {
-  const siteId = S.sel.siteId;
-  multiSel('itype', idOpts(M.list('inspect_types')));
-  multiSel('bld', idOpts(M.buildingsOf(siteId)), drawPlaceFilters);
-  drawPlaceFilters();
-  multiSel('cat', idOpts(M.list('categories')));
+  const zones = M.list('zones');
+  $('f-zone').hidden = zones.length <= 1;
+  multiSel('zone', idOpts(zones), drawZoneFilters);
+  drawZoneFilters();
   multiSel('status', Object.keys(STATUS).map(k => ({ v: k, t: k === 'fixed' ? '待複驗' : STATUS[k] })));
   multiSel('fixv', idOpts(M.list('vendors')));
   multiSel('respv', idOpts(M.list('vendors')));
   // 已從樓層清單拿掉、但還有缺失紀錄的樓層，也要能篩選
   sb.from('defects').select('building_id,floor').limit(5000).then(({ data }) => { if (!data) return; closedFloors = data; drawPlaceFilters(); });
 }
+const zoneBlds = () => M.buildingsOf(S.sel.siteId).filter(b => !RF.zone.length || RF.zone.includes(M.zoneOf(b)));
+function drawZoneFilters() {    // 檢查類型、棟別、工項跟著選的專有戶／公設走
+  const inZ = r => !RF.zone.length || RF.zone.some(z => M.inZone(r, z));
+  multiSel('itype', idOpts(M.list('inspect_types').filter(inZ)));
+  multiSel('bld', idOpts(zoneBlds()), drawPlaceFilters);
+  drawPlaceFilters();
+  multiSel('cat', idOpts(M.list('categories').filter(inZ)));
+}
 function drawPlaceFilters() {   // 樓層、戶別跟著選的棟別走
-  const blds = RF.bld.length ? RF.bld.map(id => M.get('buildings', id)).filter(Boolean) : M.buildingsOf(S.sel.siteId);
+  const blds = RF.bld.length ? RF.bld.map(id => M.get('buildings', id)).filter(Boolean) : zoneBlds();
   const floors = [...new Set(blds.flatMap(b => b.floors))];
   const ids = blds.map(b => b.id), extra = [...new Set(closedFloors.filter(d => ids.includes(d.building_id)).map(d => d.floor))].filter(f => !floors.includes(f));
   multiSel('floor', floors.map(f => ({ v: f, t: f })).concat(extra.map(f => ({ v: f, t: f + '（已關閉）' }))));
@@ -62,6 +69,7 @@ async function runReport() {
   const mk = () => {
     let q = sb.from('defects').select('*').order('id', { ascending: false });
     Object.keys(col).forEach(k => { if (RF[k].length) q = q.in(col[k], RF[k]); });
+    if (RF.zone.length && !RF.bld.length) q = q.in('building_id', zoneBlds().map(b => b.id).concat(-1));
     return q;
   };
   reportRows = await fetchAll(mk);
@@ -197,6 +205,7 @@ function filterSummary() {
   const parts = [];
   const add = (label, v) => { if (v) parts.push(`${label}：${v}`); };
   const nm = (k, f) => RF[k].map(f).join('、');
+  add('區分', nm('zone', v => M.name('zones', v)));
   add('檢查類型', nm('itype', v => M.name('inspect_types', v)));
   add('棟別', nm('bld', v => M.name('buildings', v)));
   add('樓層', nm('floor', v => v));

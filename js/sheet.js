@@ -97,7 +97,8 @@ function paintVendorMode() {
 
 function paintChoices() {
   chips($('sh-space'), M.spacesFor(cur.unit_id, cur.floor, cur.space_id), cur.space_id, r => { cur.space_id = r.id; paintChoices(); }, { empty: '尚無空間別，請管理者新增' });
-  chips($('sh-cat'), M.list('categories'), cur.category_id, r => {
+  const zid = M.zoneOf(M.get('buildings', cur.building_id));        // 只出現這一區（專有戶／公設）的工項
+  chips($('sh-cat'), M.list('categories').filter(c => M.inZone(c, zid) || c.id === cur.category_id), cur.category_id, r => {
     cur.category_id = r.id; cur.item_id = null;
     const vs = M.vendorsOfCat(r.id); cur.fix_vendor_id = vs[0] ? vs[0].id : null;
     if (!cur.respTouched) cur.resp_vendor_id = cur.fix_vendor_id;

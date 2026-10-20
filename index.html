@@ -7,7 +7,7 @@
 <script>try{document.documentElement.dataset.skin=localStorage.getItem('qc-skin')||'pro'}catch(e){document.documentElement.dataset.skin='pro'}</script>
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610200925">
+<link rel="stylesheet" href="css/app.css?v=202610201030">
 </head>
 <body>
 
@@ -69,10 +69,11 @@
       <div class="stack">
         <div class="card stack">
           <div id="site-wrap"><label class="f">案場</label><select id="site"></select></div>
+          <div id="zone-wrap"><label class="f">專有戶／公設</label><div class="chips" id="zone"></div></div>
           <div><label class="f">檢查類型</label><div class="chips" id="itype"></div></div>
           <div><label class="f">棟別</label><div class="chips" id="bld"></div></div>
           <div><label class="f">樓層</label><div class="chips" id="floor"></div></div>
-          <div><label class="f">戶別</label><div class="units" id="units"></div><p class="hint" id="unithint">紅字＝該戶未結案缺失數</p></div>
+          <div><label class="f" id="unit-label">戶別</label><div class="units" id="units"></div><p class="hint" id="unithint">紅字＝該戶未結案缺失數</p></div>
           <button class="btn block" id="go">開始檢查</button>
         </div>
       </div>
@@ -102,7 +103,7 @@
         <div class="card stack">
           <label class="f">勾選條件撈資料</label>
           <div class="filters">
-            <div id="f-itype"></div><div id="f-bld"></div>
+            <div id="f-zone"></div><div id="f-itype"></div><div id="f-bld"></div>
             <div id="f-floor"></div><div id="f-unit"></div>
             <div id="f-cat"></div><div id="f-status"></div>
             <div id="f-fixv"></div><div id="f-respv"></div>
@@ -212,15 +213,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610200925"></script>
-<script src="js/core.js?v=202610200925"></script>
-<script src="js/pick.js?v=202610200925"></script>
-<script src="js/sheet.js?v=202610200925"></script>
-<script src="js/report.js?v=202610200925"></script>
-<script src="js/admin.js?v=202610200925"></script>
-<script src="js/admin_excel.js?v=202610200925"></script>
-<script src="js/admin_import.js?v=202610200925"></script>
-<script src="js/jobs.js?v=202610200925"></script>
-<script src="js/main.js?v=202610200925"></script>
+<script src="config.js?v=202610201030"></script>
+<script src="js/core.js?v=202610201030"></script>
+<script src="js/pick.js?v=202610201030"></script>
+<script src="js/sheet.js?v=202610201030"></script>
+<script src="js/report.js?v=202610201030"></script>
+<script src="js/admin.js?v=202610201030"></script>
+<script src="js/admin_excel.js?v=202610201030"></script>
+<script src="js/admin_import.js?v=202610201030"></script>
+<script src="js/jobs.js?v=202610201030"></script>
+<script src="js/main.js?v=202610201030"></script>
 </body>
 </html>

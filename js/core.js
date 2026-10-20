@@ -33,6 +33,9 @@ async function loadMaster() {
   // 每戶空間別（新增的表；還沒建表時不要讓整個系統壞掉）
   const us = await sb.from('unit_spaces').select('*');
   S.m.unit_spaces = us.error ? [] : (us.data || []); S.noUnitSpaces = !!us.error;
+  // 專有戶／公設（12_專有公設.sql；還沒執行時就當作只有一區，畫面跟以前一樣）
+  const zs = await sb.from('zones').select('*');
+  S.m.zones = zs.error ? [] : (zs.data || []); S.noZones = !!zs.error;
 }
 const bySort = (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || String(a.name ?? a.code ?? '').localeCompare(String(b.name ?? b.code ?? ''), 'zh-Hant', { numeric: true });
 const act = rows => rows.filter(r => r.active !== false);
@@ -54,8 +57,15 @@ const M = {
     if (!ids.size) return all;
     return all.filter(sp => ids.has(sp.id) || sp.name === '全室' || sp.id === keepId);
   },
-  unitsOf: bid => M.list('units').filter(u => u.building_id === bid),
-  buildingsOf: sid => M.list('buildings').filter(b => b.site_id === sid),
+  // floor 有給：只列這層有的戶別／使用空間（沒設定樓層＝每層都有）
+  unitsOf: (bid, floor) => M.list('units').filter(u => u.building_id === bid && (floor == null || !(u.floors || []).length || u.floors.includes(floor))),
+  buildingsOf: (sid, zid) => M.list('buildings').filter(b => b.site_id === sid && (zid == null || M.zoneOf(b) === zid)),
+  // 專有戶／公設：棟別各屬一區（沒設定＝第一區）；檢查類型、工項可屬多區（沒勾＝每區都有）
+  zoneOf: b => (b && b.zone_id) || (M.list('zones')[0] || {}).id || null,
+  inZone: (r, zid) => !zid || !(r.zone_ids || []).length || r.zone_ids.includes(zid),
+  typesOf: zid => M.list('inspect_types').filter(t => M.inZone(t, zid)),
+  catsOf: zid => M.list('categories').filter(c => M.inZone(c, zid)),
+  unitLabel: zid => (M.get('zones', zid) || {}).unit_label || '戶別',
 };
 
 // ---- 小工具 ----

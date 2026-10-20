@@ -129,8 +129,8 @@ ok(db3.category_vendors.some(m => m.category_id === 2 && m.vendor_id === 1), '�
 
 // ---- 每戶空間別 ----
 await page.evaluate(async () => { const T = window.__db.T; T.units.forEach(u => { u.active = true; }); if (!T.units.some(u => u.code === 'A2')) T.units.push({ id: 99, building_id: 1, code: 'A2', sort: 2, active: true }); await reloadAdmin(); });
-await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.trim() === '戶別') d.open = true; }));
-const ud = page.locator('#admin-root details:has(> summary:text-is("戶別"))');
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.trim().startsWith('戶別')) d.open = true; }));
+const ud = page.locator('#admin-root details:has(> summary:has-text("戶別／使用空間"))');
 await ud.locator('button.chip:text-is("A1")').click();
 await ud.locator('label:has-text("有哪些空間") + .chips button.chip:has-text("前陽台")').click(); await page.waitForTimeout(300);
 await ud.locator('label:has-text("有哪些空間") + .chips button.chip:has-text("客餐廳")').click(); await page.waitForTimeout(300);

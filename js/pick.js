@@ -7,14 +7,16 @@ function normalizeSel() {
   const s = S.sel;
   const sites = M.list('sites');
   if (!sites.find(x => x.id === s.siteId)) s.siteId = sites[0] && sites[0].id;
-  const types = M.list('inspect_types');
+  const zones = M.list('zones');
+  if (!zones.find(x => x.id === s.zoneId)) s.zoneId = zones[0] ? zones[0].id : null;
+  const types = M.typesOf(s.zoneId);
   if (!types.find(x => x.id === s.typeId)) s.typeId = types[0] && types[0].id;
-  const blds = M.buildingsOf(s.siteId);
+  const blds = M.buildingsOf(s.siteId, s.zoneId);
   if (!blds.find(x => x.id === s.bldId)) s.bldId = blds[0] && blds[0].id;
   const b = M.get('buildings', s.bldId);
   const floors = b ? b.floors : [];
   if (!floors.includes(s.floor)) s.floor = floors[0] || null;
-  const units = M.unitsOf(s.bldId);
+  const units = M.unitsOf(s.bldId, s.floor);
   if (!units.find(x => x.id === s.unitId)) s.unitId = null;
 }
 
@@ -25,23 +27,28 @@ async function renderPick() {
   const sites = M.list('sites');
   $('site-wrap').hidden = sites.length <= 1;
   fillSelect($('site'), sites, s.siteId, null);
-  chips($('itype'), M.list('inspect_types'), s.typeId, r => { s.typeId = r.id; saveSel(); renderPick(); });
-  chips($('bld'), M.buildingsOf(s.siteId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); });
+  const zones = M.list('zones');
+  $('zone-wrap').hidden = zones.length <= 1;
+  chips($('zone'), zones, s.zoneId, r => { s.zoneId = r.id; s.unitId = null; saveSel(); renderPick(); });
+  const ulab = M.unitLabel(s.zoneId);
+  $('unit-label').textContent = ulab;
+  chips($('itype'), M.typesOf(s.zoneId), s.typeId, r => { s.typeId = r.id; saveSel(); renderPick(); }, { empty: '這一區還沒有檢查類型，請管理者到「管理」勾選。' });
+  chips($('bld'), M.buildingsOf(s.siteId, s.zoneId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); }, { empty: '這一區還沒有棟別，請管理者到「管理」新增。' });
   const b = M.get('buildings', s.bldId);
   const fb = $('floor'); fb.innerHTML = '';
   (b ? b.floors : []).forEach(f => {
     const c = el('button', 'chip' + (f === s.floor ? ' on' : ''), f); c.type = 'button';
-    c.onclick = () => { s.floor = f; saveSel(); renderPick(); }; fb.appendChild(c);
+    c.onclick = () => { s.floor = f; s.unitId = null; saveSel(); renderPick(); }; fb.appendChild(c);
   });
   if (!b || !b.floors.length) fb.appendChild(el('span', 'hint', '此棟尚未設定樓層，請管理者到「管理」新增。'));
   const ub = $('units'); ub.innerHTML = '';
-  const units = M.unitsOf(s.bldId);
+  const units = M.unitsOf(s.bldId, s.floor);
   units.forEach(u => {
     const btn = el('button', u.id === s.unitId ? 'on' : '', u.code); btn.type = 'button'; btn.dataset.uid = u.id;
     btn.onclick = () => { s.unitId = u.id; saveSel(); renderPick(); };
     ub.appendChild(btn);
   });
-  if (!units.length) ub.appendChild(el('span', 'hint', '此棟尚未建立戶別。'));
+  if (!units.length) ub.appendChild(el('span', 'hint', `這層還沒有${ulab}，請管理者到「管理」新增。`));
   // 未結案數（背景載入）
   const tok = ++pickToken;
   if (s.bldId && s.floor && s.typeId) {
@@ -56,7 +63,7 @@ async function renderPick() {
 }
 $('site').onchange = e => { S.sel.siteId = Number(e.target.value); S.sel.bldId = null; S.sel.unitId = null; saveSel(); renderPick(); };
 $('go').onclick = () => {
-  if (!S.sel.unitId) { toast('請先選戶別'); return; }
+  if (!S.sel.unitId) { toast('請先選' + M.unitLabel(S.sel.zoneId)); return; }
   if (!S.sel.floor) { toast('請先選樓層'); return; }
   show('fill');
 };
