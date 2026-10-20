@@ -72,7 +72,9 @@ function zoneChips(body, table, r, title) {
     cs.appendChild(b);
   });
 }
-const zoneTag = b => M.list('zones').length > 1 ? `（${M.name('zones', M.zoneOf(b))}）` : '';
+// 後台上方點選的區分：下面的檢查類型、棟別、戶別、工項都只顯示這一區的，新增的也歸這一區
+const adminZone = () => { const zs = M.list('zones'); if (!zs.find(z => z.id === adminSel.zones)) adminSel.zones = zs[0] ? zs[0].id : null; return adminSel.zones; };
+const zoneNew = () => adminZone() ? { zone_ids: [adminZone()] } : {};
 
 // 通用清單編輯器：點選 → 改名／排序／停用／刪除
 // o = { key, table, rows, label, onAdd, placeholder, nameField?('name'|'code'), sortable?(預設 true), onSelect? }
@@ -160,13 +162,15 @@ function group(key, title, sub) {
 function simpleGroup(t, title, sub) {
   const root = $('admin-root');
   const g = group(t, title, sub); root.appendChild(g.d); const box = el('div', 'stack'); g.body.appendChild(box);
-  chipEditor(box, { key: t, table: t, onSelect: t === 'inspect_types' && M.list('zones').length ? () => renderAdmin() : null, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null, rows: M.list(t, false), label: r => r.name,
-    onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i })))),
+  const it = t === 'inspect_types', zid = adminZone();
+  chipEditor(box, { key: t, table: t, onSelect: it && zid ? () => renderAdmin() : null, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null,
+    rows: M.list(t, false).filter(r => !it || M.inZone(r, zid)), label: r => r.name,
+    onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i, ...(it ? zoneNew() : {}) })))),
     placeholder: '新增' + title });
   if (t === 'inspect_types') {   // 哪些檢查類型複驗合格後還要客戶簽認
     const sb2 = el('div', 'stack'); sb2.appendChild(el('label', 'f', '複驗合格後還要「客戶簽認」才結案的檢查類型'));
     const row = el('div', 'row'); row.style.gap = '14px';
-    M.list('inspect_types').forEach(r => {
+    M.list('inspect_types').filter(r => M.inZone(r, zid)).forEach(r => {
       const lab = el('label', 'hint'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = !!r.need_sign;
       ck.onchange = () => guard(ck, async () => {
         const { error } = await sb.from('inspect_types').update({ need_sign: ck.checked }).eq('id', r.id);
@@ -177,14 +181,14 @@ function simpleGroup(t, title, sub) {
     });
     sb2.appendChild(row); g.body.appendChild(sb2);
     const tz = M.get('inspect_types', adminSel.inspect_types);
-    if (tz) zoneChips(g.body, 'inspect_types', tz);
+    if (tz && M.inZone(tz, zid)) zoneChips(g.body, 'inspect_types', tz, `${tz.name} 也要用在（可兩邊都選）`);
   }
 }
 
 function renderAdmin() {
   const root = $('admin-root'); root.innerHTML = '';
   root.appendChild(el('div', 'banner', '清單都在這裡自己改，不用找廠商。新增或停用後，填寫頁馬上跟著變。'));
-  const siteId = S.sel.siteId;
+  const siteId = S.sel.siteId; const zid = adminZone();
   renderExcelAdmin(root);
   renderImportAdmin(root);
 
@@ -194,6 +198,7 @@ function renderAdmin() {
     if (S.noZones) g.body.appendChild(el('div', 'banner', '還沒建立這一層：' + ZONE_SQL + ' 一次。'));
     else {
       const box = el('div', 'stack'); g.body.appendChild(box);
+      adminZone();
       chipEditor(box, { key: 'zones', table: 'zones', onSelect: () => renderAdmin(), rows: M.list('zones', false), label: r => r.name,
         onAdd: names => q(sb.from('zones').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.zones) + i })))), placeholder: '新增區分' });
       const z = M.get('zones', adminSel.zones);
@@ -204,26 +209,27 @@ function renderAdmin() {
         });
         g.body.appendChild(el('label', 'f', `${z.name} 的第 5 層叫什麼（例：戶別、使用空間）`)); row.append(inp, sv); g.body.appendChild(row);
       }
-      g.body.appendChild(el('p', 'hint', '檢查類型、工項在各自的清單裡勾選屬於哪一區；棟別在「棟別與樓層」選。'));
+      const zn = M.name('zones', adminZone());
+      g.body.appendChild(el('div', 'banner', `目前在設定「${zn}」：下面的檢查類型、棟別樓層、${M.unitLabel(adminZone())}、工項都只顯示${zn}的，新增的也會放在${zn}。`));
     } }
   simpleGroup('inspect_types', '檢查類型', '點一個可設定用在專有戶或公設');
 
   // 1 棟別與樓層
   { const g = group('bld', '棟別與樓層', '選戶畫面的棟別、樓層'); root.appendChild(g.d);
     const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId), label: r => r.name + zoneTag(r),
-      onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i })))),
+    chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId && (!zid || M.zoneOf(b) === zid)), label: r => r.name,
+      onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i, ...(zid ? { zone_id: zid } : {}) })))),
       placeholder: '新增棟別，例：G棟' });
     const b = M.get('buildings', adminSel.bld);
     if (b) {
       if (M.list('zones').length) {
         const zr = el('div', 'stack'); zr.appendChild(el('label', 'f', `${b.name} 屬於`)); const zc = el('div', 'chips'); zr.appendChild(zc);
         M.list('zones').forEach(z => {
-          const c = el('button', 'chip' + (M.zoneOf(b) === z.id ? ' on' : ''), z.name); c.type = 'button';
+          const c = el('button', 'chip' + (M.zoneOf(b) === z.id ? ' on' : ''), z.name); c.type = 'button';   // 改到另一區，它就移到那一區的清單
           c.onclick = () => guard(c, async () => { await q(sb.from('buildings').update({ zone_id: z.id }).eq('id', b.id)); await reloadAdmin(); });
           zc.appendChild(c);
         });
-        g.body.appendChild(zr);
+        if (M.list('zones').length > 1) g.body.appendChild(zr);
       }
       const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
       const fi = el('input'); fi.type = 'text'; fi.value = b.floors.join('、'); fl.appendChild(fi);
@@ -243,10 +249,10 @@ function renderAdmin() {
     } }
 
   // 2 戶別
-  { const g = group('unit', '戶別／使用空間', '公設的使用空間也在這裡建'); root.appendChild(g.d);
-    const blds = M.list('buildings').filter(b => b.site_id === siteId);
+  { const g = group('unit', zid ? M.unitLabel(zid) : '戶別', zid ? '' : ''); root.appendChild(g.d);
+    const blds = M.list('buildings').filter(b => b.site_id === siteId && (!zid || M.zoneOf(b) === zid));
     if (!blds.find(b => b.id === adminSel.unitBld)) adminSel.unitBld = blds[0] && blds[0].id;
-    const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null, b => b.name + zoneTag(b)); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
+    const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
     g.body.appendChild(sel);
     const box = el('div', 'stack'); g.body.appendChild(box);
     chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
@@ -275,12 +281,12 @@ function renderAdmin() {
   { const g = group('cat', '工項、缺失內容、預設廠商'); root.appendChild(g.d);
     g.body.appendChild(el('label', 'f', '工項（點一個來編輯它的缺失內容與廠商）'));
     const cbox = el('div', 'stack'); g.body.appendChild(cbox);
-    chipEditor(cbox, { key: 'cat', table: 'categories', onSelect: () => renderAdmin(), rows: M.list('categories', false), label: r => r.name + (M.list('zones').length > 1 && (r.zone_ids || []).length === 1 ? `（${M.name('zones', r.zone_ids[0])}）` : ''),
-      onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i })))),
+    chipEditor(cbox, { key: 'cat', table: 'categories', onSelect: () => renderAdmin(), rows: M.list('categories', false).filter(c => M.inZone(c, zid)), label: r => r.name,
+      onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew() })))),
       placeholder: '新增工項，例：20木地板' });
     const c = M.get('categories', adminSel.cat);
     if (c) {
-      zoneChips(g.body, 'categories', c);
+      zoneChips(g.body, 'categories', c, `${c.name} 也要用在（可兩邊都選）`);
       g.body.appendChild(el('label', 'f', `${c.name} 的缺失內容`));
       const ibox = el('div', 'stack'); g.body.appendChild(ibox);
       chipEditor(ibox, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
