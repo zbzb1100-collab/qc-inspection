@@ -5,7 +5,7 @@ const { chromium } = require('playwright');
 const root = new URL('..', import.meta.url).pathname;
 const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');
 const results = []; const fail = [];
-const ok = (c, m) => { results.push((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail.push(m); };
+const ok = (c, m) => { results.push((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail.push(m); if (process.env.V) console.log((c ? 'PASS ' : 'FAIL ') + m); };
 
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] }).catch(() => chromium.launch({ args: ['--no-sandbox'] }));
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -46,6 +46,7 @@ ok((await txt('#bld .chip')) === 'A棟,S店舖' && (await txt('#itype .chip')) =
 await page.click('#zone .chip:text-is("公設")');
 ok((await txt('#bld .chip')) === 'A棟,公設棟' && (await txt('#itype .chip')) === '第三方驗收', '公設：棟別與檢查類型跟著換（A棟兩區都有）');
 ok((await txt('#units button')) === '梯廳', '公設的 A棟 只出現梯廳，不出現 A1、A2');
+ok((await txt('#floor .chip')) === '2F,3F,8F', 'A棟 兩區還沒分開設定樓層時共用');
 await page.click('#bld .chip:text-is("公設棟")');
 ok((await page.textContent('#unit-label')) === '使用空間', '公設第 5 層叫使用空間');
 ok((await txt('#units button')) === '視聽室', 'B1 只有視聽室');
@@ -85,6 +86,19 @@ ok((await txt('details:has(> summary:text-is("使用空間")) .chips >> nth=0 >>
 await page.fill('details:has(> summary:text-is("使用空間")) input[placeholder="新增使用空間"]', '電梯廳');
 await page.click('details:has(> summary:text-is("使用空間")) button:text-is("新增")'); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.units.find(u => u.code === '電梯廳').zone_id)) === 2, '在公設新增的使用空間歸公設');
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { d.open = true; }));
+await page.click('details:has(> summary:has-text("棟別與樓層")) .chip:text-is("A棟")'); await page.waitForTimeout(200);
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { d.open = true; }));
+await page.fill('details:has(> summary:has-text("棟別與樓層")) .stack:has(> label:has-text("的樓層")) > input', '1F、R1F');
+await page.click('details:has(> summary:has-text("棟別與樓層")) button:text-is("儲存樓層")'); await page.waitForTimeout(300);
+const ab = await page.evaluate(() => window.__db.T.buildings[0]);
+ok(JSON.stringify(ab.zone_floors) === '{"1":["2F","3F","8F"],"2":["1F","R1F"]}' && ab.floors.join() === '1F,2F,3F,8F,R1F', 'A棟 公設樓層分開設定，整棟樓層合併排序：' + JSON.stringify(ab));
+await page.click('#t-pick'); await page.waitForTimeout(200);
+await page.click('#zone .chip:text-is("公設")'); await page.click('#bld .chip:text-is("A棟")');
+ok((await txt('#floor .chip')) === '1F,R1F', '選戶：公設 A棟 只出現 1F、R1F');
+await page.click('#zone .chip:text-is("專有戶")'); await page.click('#bld .chip:text-is("A棟")');
+ok((await txt('#floor .chip')) === '2F,3F,8F', '選戶：專有戶 A棟 只出現 2F、3F、8F');
+await page.click('#t-admin'); await page.waitForSelector('#admin-root details'); await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { d.open = true; })); await zchip('公設');
 await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { d.open = true; }));
 await page.selectOption('details:has(> summary:text-is("使用空間")) select', '3'); await page.waitForTimeout(200);
 await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { d.open = true; }));

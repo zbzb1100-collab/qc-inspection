@@ -14,7 +14,7 @@ function normalizeSel() {
   const blds = M.buildingsOf(s.siteId, s.zoneId);
   if (!blds.find(x => x.id === s.bldId)) s.bldId = blds[0] && blds[0].id;
   const b = M.get('buildings', s.bldId);
-  const floors = b ? b.floors : [];
+  const floors = M.floorsOf(b, s.zoneId);
   if (!floors.includes(s.floor)) s.floor = floors[0] || null;
   const units = M.unitsOf(s.bldId, s.floor, s.zoneId);
   if (!units.find(x => x.id === s.unitId)) s.unitId = null;
@@ -36,11 +36,11 @@ async function renderPick() {
   chips($('bld'), M.buildingsOf(s.siteId, s.zoneId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); }, { empty: '這一區還沒有棟別，請管理者到「管理」新增。' });
   const b = M.get('buildings', s.bldId);
   const fb = $('floor'); fb.innerHTML = '';
-  (b ? b.floors : []).forEach(f => {
+  M.floorsOf(b, s.zoneId).forEach(f => {
     const c = el('button', 'chip' + (f === s.floor ? ' on' : ''), f); c.type = 'button';
     c.onclick = () => { s.floor = f; s.unitId = null; saveSel(); renderPick(); }; fb.appendChild(c);
   });
-  if (!b || !b.floors.length) fb.appendChild(el('span', 'hint', '此棟尚未設定樓層，請管理者到「管理」新增。'));
+  if (!M.floorsOf(b, s.zoneId).length) fb.appendChild(el('span', 'hint', '此棟尚未設定樓層，請管理者到「管理」新增。'));
   const ub = $('units'); ub.innerHTML = '';
   const units = M.unitsOf(s.bldId, s.floor, s.zoneId);
   units.forEach(u => {

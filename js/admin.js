@@ -45,11 +45,11 @@ function unitFloorsEditor(body, u) {
   if (S.noZones) return;
   body.appendChild(el('label', 'f', `${u.code} 在哪幾層（全部不選＝每層都有）`));
   const cs = el('div', 'chips'); body.appendChild(cs);
-  const have = new Set(u.floors || []);
-  b.floors.forEach(f => {
+  const have = new Set(u.floors || []); const bf = M.floorsOf(b, M.unitZone(u));
+  bf.forEach(f => {
     const c = el('button', 'chip' + (have.has(f) ? ' on' : ''), f); c.type = 'button';
     c.onclick = () => guard(c, async () => {
-      const fl = have.has(f) ? [...have].filter(x => x !== f) : b.floors.filter(x => have.has(x) || x === f);
+      const fl = have.has(f) ? [...have].filter(x => x !== f) : bf.filter(x => have.has(x) || x === f);
       await q(sb.from('units').update({ floors: fl }).eq('id', u.id)); await reloadAdmin();
     });
     cs.appendChild(c);
@@ -238,10 +238,21 @@ function renderAdmin() {
         });
         if (M.list('zones').length > 1) g.body.appendChild(zr);
       }
-      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
-      const fi = el('input'); fi.type = 'text'; fi.value = b.floors.join('、'); fl.appendChild(fi);
+      // 這棟兩區都有時，樓層分開設定（存在 zone_floors；整棟 floors＝各區合起來，報表用）
+      const multi = zid && M.bldZones(b).length > 1;
+      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', multi ? `${b.name} 在「${M.name('zones', zid)}」的樓層（用「、」分隔，可寫範圍，例：2F~19F）` : `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
+      const fi = el('input'); fi.type = 'text'; fi.value = (multi ? M.floorsOf(b, zid) : b.floors).join('、'); fl.appendChild(fi);
       const sv = el('button', 'btn small', '儲存樓層'); sv.onclick = () => guard(sv, async () => {
-        const floors = parseFloors(fi.value); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開，請一層一層列出，例：R1F、R2F、PRF`); await q(sb.from('buildings').update({ floors }).eq('id', b.id)); await reloadAdmin(); toast('樓層已更新');
+        const floors = parseFloors(fi.value); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開，請一層一層列出，例：R1F、R2F、PRF`);
+        let patch = { floors: [...floors] };
+        if (multi) {
+          const zf = {}; M.bldZones(b).forEach(z => { zf[z] = z === zid ? [...floors] : M.floorsOf(b, z); });   // 另一區沒設定過的，先把目前的樓層固定下來
+          const all = Object.values(zf).flat();
+          patch = { zone_floors: zf, floors: [...new Set(all)].sort((x, y) => floorRank(x) - floorRank(y)) };
+        }
+        const { error } = await sb.from('buildings').update(patch).eq('id', b.id);
+        if (error) throw (/zone_floors/.test(error.message) ? new Error('要先到 Supabase 執行 14_分區樓層.sql') : error);
+        await reloadAdmin(); toast('樓層已更新');
       });
       fl.appendChild(sv);
       // 小工具：一次產生連續樓層，填進上面那格（按了還是要按「儲存樓層」）

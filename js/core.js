@@ -63,6 +63,8 @@ const M = {
   buildingsOf: (sid, zid) => M.list('buildings').filter(b => b.site_id === sid && (zid == null || M.bldZones(b).includes(zid))),
   // 專有戶／公設：棟別可屬多區（沒設定＝第一區）；戶別屬一區（沒設定＝該棟的第一區）；檢查類型、工項可屬多區（沒勾＝每區都有）
   bldZones: b => { if (!b) return []; if ((b.zone_ids || []).length) return b.zone_ids; const z = b.zone_id || (M.list('zones')[0] || {}).id; return z ? [z] : []; },
+  // 這棟在某一區的樓層：有分區設定就用它，沒有就用整棟的樓層
+  floorsOf: (b, zid) => { if (!b) return []; const zf = (b.zone_floors || {})[zid]; return zf && zf.length ? zf : b.floors; },
   unitZone: u => u ? (u.zone_id || M.bldZones(M.get('buildings', u.building_id))[0] || null) : null,
   inZone: (r, zid) => !zid || !(r.zone_ids || []).length || r.zone_ids.includes(zid),
   typesOf: zid => M.list('inspect_types').filter(t => M.inZone(t, zid)),
@@ -73,6 +75,16 @@ const M = {
 // ---- 小工具 ----
 // 樓層輸入：逗號、頓號、空白、句點、斜線都當分隔；只打數字的補 F（1.2.R → 1F、2F、R）
 // 範圍用 ~：B1F~B3F → B1F、B2F、B3F；1~19 → 1F…19F。數字前後文字不同（R1F~PRF）就沒辦法展開，回傳 bad
+// 樓層排序用：B3F < B1F < 1F < 19F < R1F < PRF
+function floorRank(f) {
+  let m;
+  if ((m = /^B(\d+)/i.exec(f))) return -Number(m[1]);
+  if ((m = /^(\d+)/.exec(f))) return Number(m[1]);
+  if ((m = /^R(\d+)/i.exec(f))) return 1000 + Number(m[1]);
+  if (/^RF$/i.test(f)) return 1000;
+  if (/^P/i.test(f)) return 2000;
+  return 1500;
+}
 function parseFloors(str) {
   const out = [], bad = [];
   const fix = x => /^\d+$/.test(x) ? x + 'F' : x;
