@@ -36,6 +36,7 @@ async function loadMaster() {
   // 專有戶／公設（12_專有公設.sql；還沒執行時就當作只有一區，畫面跟以前一樣）
   const zs = await sb.from('zones').select('*');
   S.m.zones = zs.error ? [] : (zs.data || []); S.noZones = !!zs.error;
+  S.noSpaceZones = S.noZones || (S.m.spaces.length > 0 && !('zone_ids' in S.m.spaces[0]));   // 16_空間別分區.sql 還沒執行
 }
 const bySort = (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || String(a.name ?? a.code ?? '').localeCompare(String(b.name ?? b.code ?? ''), 'zh-Hant', { numeric: true });
 const act = rows => rows.filter(r => r.active !== false);
@@ -48,9 +49,9 @@ const M = {
   itemsOf: cid => M.list('items').filter(i => i.category_id === cid),
   vendorsOfCat: cid => S.m.category_vendors.filter(cv => cv.category_id === cid).sort((a, b) => a.sort - b.sort)
     .map(cv => M.get('vendors', cv.vendor_id)).filter(v => v && v.active !== false),
-  // 空間別是一份總清單；每戶設定了哪些空間，填寫時就只出現那些（＋全室）。這戶沒設定時，改看平面圖標記；都沒有就全部顯示。
+  // 空間別是一份總清單（可分專有戶／公設）；每戶設定了哪些空間，填寫時就只出現那些（＋全室）。這戶沒設定時，改看平面圖標記；都沒有就顯示這一區全部。
   spacesFor: (unitId, floor, keepId) => {
-    const all = M.list('spaces'); const plan = typeof pickPlan === 'function' ? pickPlan(unitId, floor) : null;
+    const zid = M.unitZone(M.get('units', unitId)), all = M.list('spaces').filter(sp => M.inZone(sp, zid) || sp.id === keepId); const plan = typeof pickPlan === 'function' ? pickPlan(unitId, floor) : null;
     const bound = new Set(S.m.unit_spaces.filter(m => m.unit_id === unitId).map(m => m.space_id));
     if (bound.size) return all.filter(sp => bound.has(sp.id) || sp.id === keepId);         // 這戶有設定：只出現勾選的
     const ids = new Set(plan ? S.m.plan_spaces.filter(m => m.plan_id === plan.id).map(m => m.space_id) : []);

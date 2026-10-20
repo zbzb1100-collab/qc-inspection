@@ -49,7 +49,7 @@ const put = (name, rows) => { const ws = wb.Sheets[name]; XLSX.utils.sheet_add_a
 put('棟別樓層', [['G棟', '2F、3F、4F', '', '']]);
 wb.Sheets['棟別樓層'].B2.v = '2F、3F、8F、9F'; wb.Sheets['棟別樓層'].C2.v = 5;
 put('戶別', [['G棟', 'G1', '', ''], ['G棟', 'G2', '', ''], ['A棟', 'A1', '', ''], ['X棟', 'X1', '', ''], ['A棟', 'A3', '', '停用']]);
-put('空間別', [['交屋檢查', '書房', 'H', ''], ['驗收', '陽台', '', '']]);
+put('空間別', [['書房', 'H', ''], ['陽台', '', '']]);
 put('工項', [['20木地板', '新廠商甲、太隆興業', '', ''], ['01防水', '捷挺裝潢', '', '']]);
 put('缺失內容', [['20木地板', '踢腳板鬆脫', '', ''], ['99不存在', 'x', '', '']]);
 put('修繕方式', [['重做', '', '']]);
@@ -58,7 +58,7 @@ const p2 = '/tmp/claude-0/xl/in.xlsx'; XLSX.writeFile(wb, p2);
 await page.locator('#xl-file').setInputFiles(p2); await page.waitForSelector('#xl-go');
 const prev = await page.textContent('#xl-out');
 ok(prev.includes('找不到棟別「X棟」') && prev.includes('找不到工項「99不存在」'), '預覽列出錯誤列（找不到棟別／工項）');
-ok(!prev.includes('找不到檢查類型'), '同檔新建的檢查類型「驗收」可被空間別使用');
+ok(!prev.includes('找不到檢查類型'), '預覽沒有找不到檢查類型的錯誤');
 await page.click('#xl-go'); await page.waitForTimeout(800);
 const db = await page.evaluate(() => window.__db.T);
 const g = db.buildings.find(b => b.name === 'G棟');
@@ -69,7 +69,7 @@ ok(db.units.filter(u => u.code === 'A1').length === 1, '既有戶別不重複新
 const a3 = db.units.find(u => u.code === 'A3'); ok(a3 && a3.active === false, '新增 A3 並停用');
 ok(!db.units.some(u => u.code === 'X1'), '不存在的棟別那列略過');
 const ty = db.inspect_types.find(t => t.name === '驗收'); ok(!!ty, '新增檢查類型 驗收');
-ok(db.spaces.some(s => s.name === '陽台' && s.inspect_type_id === ty.id) && db.spaces.some(s => s.name === '書房' && s.code === 'H'), '新增空間別（含同檔新建的類型）');
+ok(db.spaces.some(s => s.name === '陽台') && db.spaces.some(s => s.name === '書房' && s.code === 'H'), '新增空間別（不用填檢查類型）');
 const nc = db.categories.find(c => c.name === '20木地板'); ok(!!nc, '新增工項');
 ok(db.items.some(i => i.name === '踢腳板鬆脫' && i.category_id === nc.id), '新增缺失內容掛在新工項下');
 ok(!db.vendors.some(v => v.name === '新廠商甲'), '預設廠商打錯／不存在不會自動新增廠商');

@@ -25,6 +25,7 @@ await page.addInitScript(() => {   // 專有戶／公設 測試資料
   T.inspect_types[0].zone_ids = [1];
   T.inspect_types.push({ id: 2, name: '第三方驗收', sort: 2, active: true, zone_ids: [2] });
   T.categories[0].zone_ids = [1, 2]; T.categories[1].zone_ids = [1];
+  T.spaces.forEach(sp => { sp.zone_ids = [1]; }); T.spaces.push({ id: 9, inspect_type_id: 1, code: '', name: '全區', sort: 9, active: true, zone_ids: [2] });
 });
 await page.route('**/*', r => {
   const u = r.request().url();
@@ -56,6 +57,7 @@ ok((await txt('#units button')) === '棋藝室', '1F 只有棋藝室');
 await page.click('#units button:has-text("棋藝室")'); await page.click('#go');
 await page.click('#add-nopos'); await page.waitForSelector('#sheet:not([hidden])');
 ok((await txt('#sh-cat .chip')) === '01防水', '公設只出現公設的工項');
+ok((await txt('#sh-space .chip')) === '全區', '公設只出現公設的空間別');
 await page.click('#sh-back'); await page.waitForTimeout(200);
 await page.click('#t-report'); await page.waitForTimeout(400);
 ok(await page.locator('#f-zone').isVisible(), '報表有專有戶／公設篩選');
@@ -120,6 +122,11 @@ await page.evaluate(() => document.querySelectorAll('#admin-root details').forEa
 await page.fill('details:has(> summary:text-is("使用空間")) input[placeholder="新增使用空間"]', '機房');
 await page.click('details:has(> summary:text-is("使用空間")) button:text-is("新增")'); await page.waitForTimeout(300);
 ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.code === '機房').floors)) === '["B1"]', '新增使用空間時直接指定樓層');
+await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { d.open = true; }));
+ok((await txt('details:has(> summary:has-text("編輯空間別總清單")) .chips >> nth=0 >> .chip')) === '全區', '後台公設的空間別總清單只列公設的');
+await page.fill('details:has(> summary:has-text("編輯空間別總清單")) input[placeholder^="新增空間別"]', '機電空間');
+await page.click('details:has(> summary:has-text("編輯空間別總清單")) button:text-is("新增")'); await page.waitForTimeout(300);
+ok(JSON.stringify(await page.evaluate(() => window.__db.T.spaces.find(s => s.name === '機電空間').zone_ids)) === '[2]', '在公設新增的空間別歸公設');
 ok(!errors.length, 'JS 錯誤：' + errors.join(' | '));
 console.log(results.join('\n'));
 await browser.close();

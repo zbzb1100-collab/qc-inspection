@@ -862,3 +862,13 @@ end $$;
 
 -- 戶別跟著所屬的棟（同一棟的戶別都同一區）
 update public.units u set zone_id = b.zone_id from public.buildings b where u.building_id = b.id and u.zone_id is distinct from b.zone_id;
+
+-- ========== 16 空間別分區 ==========
+alter table public.spaces add column if not exists zone_ids bigint[] not null default '{}';   -- 空的＝每區都出現
+update public.spaces s set zone_ids = z.ids
+from (
+  select us.space_id, array_agg(distinct coalesce(b.zone_id, (select id from public.zones order by sort, id limit 1))) as ids
+  from public.unit_spaces us join public.units u on u.id = us.unit_id join public.buildings b on b.id = u.building_id
+  group by us.space_id
+) z
+where s.id = z.space_id and s.zone_ids = '{}' and array_length(z.ids, 1) = 1;

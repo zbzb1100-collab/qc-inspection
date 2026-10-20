@@ -16,8 +16,8 @@ function unitSpacesEditor(body, u) {
   const mine = () => S.m.unit_spaces.filter(m => m.unit_id === u.id).map(m => m.space_id);
   box.appendChild(el('label', 'f', `${u.code} 有哪些空間（點選＝有；全部不選＝填寫時顯示全部）`));
   const cs = el('div', 'chips'); box.appendChild(cs);
-  const have = new Set(mine());
-  M.list('spaces').forEach(sp => {
+  const have = new Set(mine()), uz = M.unitZone(u);
+  M.list('spaces').filter(sp => M.inZone(sp, uz) || have.has(sp.id)).forEach(sp => {
     const b = el('button', 'chip' + (have.has(sp.id) ? ' on' : ''), (sp.code && sp.code !== '0' ? sp.code + ' ' : '') + sp.name); b.type = 'button';
     b.onclick = () => guard(b, async () => {
       if (have.has(sp.id)) await q(sb.from('unit_spaces').delete().eq('unit_id', u.id).eq('space_id', sp.id));
@@ -288,18 +288,21 @@ function renderAdmin() {
     { const nd = el('details'); nd.open = adminOpen.has('space'); nd.addEventListener('toggle', () => { nd.open ? adminOpen.add('space') : adminOpen.delete('space'); });
       const ns = el('summary', null, '編輯空間別總清單（新增、改名、圖面代號、排序、停用）'); ns.style.cssText = 'cursor:pointer;font-weight:700;margin-top:10px'; nd.appendChild(ns);
       const nb = el('div', 'stack'); nb.style.marginTop = '8px'; nd.appendChild(nb); g.body.appendChild(nd);
-      const rows = S.m.spaces.slice().sort(bySort);
-      const typeId = (rows[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;
+      const allSp = S.m.spaces.slice().sort(bySort), rows = allSp.filter(sp => M.inZone(sp, zid));   // 只列目前這一區（專有戶／公設）的
+      const typeId = (allSp[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;   // 舊欄位，資料庫還要求有值
       const box2 = el('div', 'stack'); nb.appendChild(box2);
-      chipEditor(box2, { key: 'space', table: 'spaces', rows, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
+      chipEditor(box2, { key: 'space', table: 'spaces', rows, onSelect: zid ? () => renderAdmin() : null, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
           const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
           for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
           await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
           const have = new Set(S.m.unit_spaces.filter(m => m.space_id === b.id).map(m => m.unit_id));
           for (const m of S.m.unit_spaces.filter(m => m.space_id === a.id && !have.has(m.unit_id))) await q(sb.from('unit_spaces').insert({ unit_id: m.unit_id, space_id: b.id }));
         } },
-        onAdd: names => q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(rows) + k })))),
-        placeholder: '新增空間別，例：玄關' }); } }
+        onAdd: names => { if (allSp.some(sp => names.includes(sp.name))) throw new Error('「' + names.filter(n => allSp.some(sp => sp.name === n)).join('、') + '」另一區已經有了，請到那一區點它，在「也要用在」加上這一區');
+          return q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(allSp) + k, ...(zid && !S.noSpaceZones ? { zone_ids: [zid] } : {}) })))); },
+        placeholder: '新增空間別，例：玄關' });
+      const ssp = M.get('spaces', adminSel.space);
+      if (ssp && rows.includes(ssp) && !S.noSpaceZones) zoneChips(nb, 'spaces', ssp, `${ssp.name} 也要用在（可兩邊都選）`); } }
 
 
   // 4 工項與缺失內容與廠商對應
