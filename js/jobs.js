@@ -102,7 +102,7 @@ function jobCard(j, listBox, pick) {
   top.append(st); c.appendChild(top);
   const who = (M.get('profiles', j.created_by) || {}).name || '';
   const n = j.result && j.result.rows ? j.result.rows.length : null;
-  c.appendChild(el('small', 'hint', [j.file_name, j.vendor, who, String(j.created_at || '').slice(0, 16).replace('T', ' '), n != null ? `讀出 ${n} 筆` : ''].filter(Boolean).join('　')));
+  c.appendChild(el('small', 'hint', [j.file_name, j.vendor, who, fmtTime(j.created_at), n != null ? `讀出 ${n} 筆` : ''].filter(Boolean).join('　')));
   if (j.note) c.appendChild(el('small', 'hint', '說明：' + j.note));
   if (j.message) c.appendChild(el('small', 'hint', (j.status === 'error' ? '⚠ ' : 'AI 提醒：') + j.message));
   const row = el('div', 'row'); const out = el('div', 'stack');
