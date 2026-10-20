@@ -70,7 +70,20 @@ const M = {
 
 // ---- 小工具 ----
 // 樓層輸入：逗號、頓號、空白、句點、斜線都當分隔；只打數字的補 F（1.2.R → 1F、2F、R）
-const parseFloors = str => String(str || '').split(/[,，、\s.。．\/／;；]+/).map(x => x.trim()).filter(Boolean).map(x => /^\d+$/.test(x) ? x + 'F' : x);
+// 範圍用 ~：B1F~B3F → B1F、B2F、B3F；1~19 → 1F…19F。數字前後文字不同（R1F~PRF）就沒辦法展開，回傳 bad
+function parseFloors(str) {
+  const out = [], bad = [];
+  const fix = x => /^\d+$/.test(x) ? x + 'F' : x;
+  String(str || '').split(/[,，、\s.。．\/／;；]+/).map(x => x.trim()).filter(Boolean).forEach(tok => {
+    const r = tok.split(/[~～]/);
+    if (r.length === 1) { out.push(fix(tok)); return; }
+    const m1 = fix(r[0]).match(/^(\D*)(\d+)(\D*)$/), m2 = fix(r[1]).match(/^(\D*)(\d+)(\D*)$/);
+    if (r.length !== 2 || !m1 || !m2 || m1[1] !== m2[1] || m1[3] !== m2[3]) { bad.push(tok); return; }
+    const a = Number(m1[2]), b = Number(m2[2]), st = a <= b ? 1 : -1;
+    for (let i = a; st > 0 ? i <= b : i >= b; i += st) out.push(m1[1] + i + m1[3]);
+  });
+  out.bad = bad; return out;
+}
 function toast(m) {
   const t = $('toast'); t.textContent = m; t.classList.add('show');
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);

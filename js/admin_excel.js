@@ -154,6 +154,7 @@ function xlCompute(stage, data, pend) {
     case 'bld': return xlStage('棟別樓層', 'buildings', rowsOf('bld'), { scope: () => bldRows().map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.bld.has(e.id), row: r => {
       const n = need(r, '棟別'), ex = bldRows().find(b => b.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const fl = r['樓層'] === '' ? undefined : parseFloors(r['樓層']);
+      if (fl && fl.bad.length) throw new Error(`樓層「${fl.bad.join('、')}」沒辦法自動展開，請一層一層列出`);
       return { k: n, nm: n, ex, base: { site_id: siteId, floors: [], sort: ns('b', bldRows()), active: true }, want: { name: n, floors: fl, sort: s, active: a } };
     } });
     case 'unit': return xlStage('戶別', 'units', rowsOf('unit'), { scope: () => S.m.units.filter(u => bldRows().some(b => b.id === u.building_id)).map(e => ({ ex: e, k: M.name('buildings', e.building_id) + '|' + e.code, nm: M.name('buildings', e.building_id) + ' ' + e.code })), used: e => XL_USE.unit.has(e.id), row: r => {

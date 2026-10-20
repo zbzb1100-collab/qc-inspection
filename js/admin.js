@@ -234,7 +234,7 @@ function renderAdmin() {
       const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（這格才是設定；用「、」分隔，照順序，例：B1、1F、2F）`));
       const fi = el('input'); fi.type = 'text'; fi.value = b.floors.join('、'); fl.appendChild(fi);
       const sv = el('button', 'btn small', '儲存樓層'); sv.onclick = () => guard(sv, async () => {
-        const floors = parseFloors(fi.value); await q(sb.from('buildings').update({ floors }).eq('id', b.id)); await reloadAdmin(); toast('樓層已更新');
+        const floors = parseFloors(fi.value); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開，請一層一層列出，例：R1F、R2F、PRF`); await q(sb.from('buildings').update({ floors }).eq('id', b.id)); await reloadAdmin(); toast('樓層已更新');
       });
       fl.appendChild(sv);
       // 小工具：一次產生連續樓層，填進上面那格（按了還是要按「儲存樓層」）
