@@ -69,6 +69,8 @@ const M = {
 };
 
 // ---- 小工具 ----
+// 樓層輸入：逗號、頓號、空白、句點、斜線都當分隔；只打數字的補 F（1.2.R → 1F、2F、R）
+const parseFloors = str => String(str || '').split(/[,，、\s.。．\/／;；]+/).map(x => x.trim()).filter(Boolean).map(x => /^\d+$/.test(x) ? x + 'F' : x);
 function toast(m) {
   const t = $('toast'); t.textContent = m; t.classList.add('show');
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);
