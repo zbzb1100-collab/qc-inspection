@@ -43,7 +43,8 @@ function unitSpacesEditor(body, u) {
 function unitFloorsEditor(body, u) {
   const b = M.get('buildings', u.building_id); if (!b) return;
   if (S.noZones) return;
-  body.appendChild(el('label', 'f', `${u.code} 在哪幾層（全部不選＝每層都有）`));
+  const wrap = el('div', 'stack unit-floors'); body.appendChild(wrap); body = wrap;
+  body.appendChild(el('label', 'f', (u.floors || []).length ? `${u.code} 在哪幾層（點選＝有）` : `${u.code} 在哪幾層：目前沒設定，每層都會出現，請點選它所在的樓層`));
   const cs = el('div', 'chips'); body.appendChild(cs);
   const have = new Set(u.floors || []); const bf = b.floors;
   bf.forEach(f => {
@@ -255,9 +256,32 @@ function renderAdmin() {
     if (!blds.find(b => b.id === adminSel.unitBld)) adminSel.unitBld = blds[0] && blds[0].id;
     const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
     g.body.appendChild(sel);
-    const box = el('div', 'stack'); g.body.appendChild(box);
+    const ub = M.get('buildings', adminSel.unitBld), ulab = zid ? M.unitLabel(zid) : '戶別';
+    const uRows = S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort);
+    // 各層有哪些：一眼看出哪些沒設定樓層（每層都會出現）
+    if (ub && ub.floors.length > 1 && !S.noZones) {
+      const ov = el('div', 'stack'); ov.appendChild(el('label', 'f', `${ub.name} 各層有哪些${ulab}`));
+      ub.floors.forEach(f => {
+        const has = uRows.filter(u => u.active !== false && (u.floors || []).includes(f)).map(u => u.code);
+        if (has.length) ov.appendChild(el('div', 'hint', `${f}：${has.join('、')}`));
+      });
+      const all = uRows.filter(u => u.active !== false && !(u.floors || []).length).map(u => u.code);
+      if (all.length) ov.appendChild(el('div', 'banner', `沒設定樓層（${ub.floors.join('、')} 每層都會出現）：${all.join('、')}。點下面的名稱可設定它在哪幾層。`));
+      g.body.appendChild(ov);
+      // 新增時先選樓層
+      const nf = adminSel.newFloors = (adminSel.newFloors || []).filter(f => ub.floors.includes(f));
+      const pr = el('div', 'stack'); pr.appendChild(el('label', 'f', `新增的${ulab}放在哪幾層（先點樓層，再到下面輸入名稱按新增；都不點＝每層都有）`));
+      const pc = el('div', 'chips'); pr.appendChild(pc);
+      ub.floors.forEach(f => {
+        const c = el('button', 'chip' + (nf.includes(f) ? ' on' : ''), f); c.type = 'button';
+        c.onclick = () => { adminSel.newFloors = nf.includes(f) ? nf.filter(x => x !== f) : ub.floors.filter(x => nf.includes(x) || x === f); renderAdmin(); };
+        pc.appendChild(c);
+      });
+      g.body.appendChild(pr);
+    }
+    const box = el('div', 'stack unit-list'); g.body.appendChild(box);
     chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
-      onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i })))),
+      onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i, ...((adminSel.newFloors || []).length ? { floors: adminSel.newFloors } : {}) })))),
       placeholder: zid ? `新增${M.unitLabel(zid)}` : '新增戶別，例：A9' });
     const su = S.m.units.find(x => x.id === adminSel.unit); if (su) { unitFloorsEditor(g.body, su); unitSpacesEditor(g.body, su); }
     // 空間別總清單（新增、改名、圖面代號、排序、停用、合併）收在戶別裡面
