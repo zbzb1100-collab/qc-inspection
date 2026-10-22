@@ -301,7 +301,7 @@ function tabSpace(root) {
     const wrap = el('div', 'lt-wrap'); const t = el('table', 'lt matrix'); wrap.appendChild(t);
     const hr = el('tr'); hr.appendChild(el('th', 'nm', ulab));
     sps.forEach(sp => { const th = el('th', 'vt'); const hb = el('button', 'colbtn', sp.name); hb.type = 'button'; hb.title = `整欄：${sp.name}`;
-      hb.onclick = () => { const on = !units.every(u => eff(u).has(sp.id)); adminSave(async () => { for (const u of units) { const s = eff(u); on ? s.add(sp.id) : s.delete(sp.id); await setUnitSpaces([u.id], [...s]); } }, null, on ? `全部勾上「${sp.name}」` : `全部取消「${sp.name}」`); };
+      hb.onclick = () => { const on = !units.every(u => bound(u).includes(sp.id));   /* 淡色（還沒設定）的算沒勾：按一下就整欄正式勾上 */ adminSave(async () => { for (const u of units) { const s = eff(u); on ? s.add(sp.id) : s.delete(sp.id); await setUnitSpaces([u.id], [...s]); } }, null, on ? `全部勾上「${sp.name}」` : `全部取消「${sp.name}」`); };
       th.appendChild(hb); hr.appendChild(th); });
     const th = el('thead'); th.appendChild(hr); t.appendChild(th); const tb = el('tbody'); t.appendChild(tb);
     units.forEach(u => {
