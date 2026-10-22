@@ -72,7 +72,7 @@ function listTable(box, o) {
     inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
     inp.onchange = () => adminSave(async () => { const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await q(sb.from(o.table).update({ [nf]: v }).eq('id', r.id)); },
       () => { inp.value = r[nf] ?? ''; }, '已改名');
-    nm.appendChild(inp); if (r.active === false) nm.appendChild(el('span', 'tag', '已停用')); tr.appendChild(nm);
+    nm.appendChild(inp); if (r.active === false) nm.appendChild(el('span', 'tag', '已停用')); { const note = o.nameNote && o.nameNote(r); if (note) nm.appendChild(el('div', 'hint warn', note)); } tr.appendChild(nm);
     const tools = el('td', 'tools');
     if (sortable) {
       const up = el('button', 'ib', '↑'), dn = el('button', 'ib', '↓'); up.title = '往前移'; dn.title = '往後移'; up.disabled = i === 0; dn.disabled = i === rows.length - 1;
@@ -248,16 +248,15 @@ function tabStruct(root) {
     if (b) {
       const all = b.floors;
       const eff = u => (u.floors || []).length ? all.filter(f => u.floors.includes(f)) : all;
-      const setFloors = (u, fl) => q(sb.from('units').update({ floors: fl.length === all.length ? [] : fl }).eq('id', u.id));
+      const setFloors = (u, fl) => q(sb.from('units').update({ floors: fl.length === all.length ? [] : fl.length ? fl : ['無'] }).eq('id', u.id));   // 一層都不勾存「無」（空的＝每層都有）
       const cols = [{ head: '每層都有', cls: 'allcol', cell: u => {
         const on = eff(u).length === all.length;
         return checkCell(on, (v, back) => { if (!v) { back(); toast('取消「每層都有」：直接把不需要的樓層取消勾選'); return; } adminSave(() => setFloors(u, all), back); }, `${u.code} 每層都有`);
       } }].concat(all.map(f => ({ head: f, cell: u => checkCell(eff(u).includes(f), (v, back) => {
         const fl = all.filter(x => x === f ? v : eff(u).includes(x));
-        if (!fl.length) { back(); toast(`${u.code} 至少要在一層；不用了請按「停用」`); return; }
         adminSave(() => setFloors(u, fl), back, '');
       }, `${u.code} ${f}`) })));
-      listTable(body, { key: 'unit', table: 'units', nameField: 'code', nameHead: `${ulab}（點一下就能改名）`, rows: S.m.units.filter(u => u.building_id === b.id).sort(bySort), cols,
+      listTable(body, { key: 'unit', table: 'units', nameField: 'code', nameHead: `${ulab}（點一下就能改名）`, nameNote: u => eff(u).length ? '' : '沒勾樓層，選戶時不會出現', rows: S.m.units.filter(u => u.building_id === b.id).sort(bySort), cols,
         addFields: [{ placeholder: '在哪幾層（空白＝每層都有），例：1F', width: '240px' }],
         onAdd: (names, [fl]) => { const floors = parseFloors(fl); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開`);
           const bad = floors.filter(f => !all.includes(f)); if (bad.length) throw new Error(`${b.name} 沒有 ${bad.join('、')}，請先在上面「棟別與樓層」加上`);

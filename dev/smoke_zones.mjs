@@ -107,7 +107,9 @@ ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.id =
 await page.uncheck('#sec-unit input[title="視聽室 1F"]'); await page.waitForTimeout(300);
 ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.id === 4).floors)) === '["B1"]', '取消勾選 1F');
 await page.click('#sec-unit input[title="視聽室 B1"]'); await page.waitForTimeout(300);
-ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.id === 4).floors)) === '["B1"]' && await page.isChecked('#sec-unit input[title="視聽室 B1"]'), '最後一層不能取消（防呆）');
+ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.id === 4).floors)) === '["無"]' && (await page.textContent('#sec-unit tr[data-name="視聽室"]')).includes('不會出現'), '可以一層都不勾（標示選戶時不會出現）');
+ok(await page.evaluate(() => !M.unitsOf(3, 'B1').some(u => u.id === 4) && !M.unitsOf(3, '1F').some(u => u.id === 4)), '一層都不勾的不出現在任何樓層');
+await page.check('#sec-unit input[title="視聽室 B1"]'); await page.waitForTimeout(300);
 await addIn('#sec-unit', '機房', 'B1');
 ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.code === '機房').floors)) === '["B1"]', '新增使用空間時直接指定樓層');
 await tab('space');

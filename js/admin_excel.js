@@ -182,9 +182,9 @@ function xlCompute(stage, data, pend) {
       // 樓層：這戶（使用空間）出現在哪幾層；空白＝每層都有；舊檔沒有這欄＝不動
       let fl; if (zones.length && data.unit && data.unit.hasFloors) {
         fl = parseFloors(r['樓層'] || ''); if (fl.bad.length) throw new Error(`樓層「${fl.bad.join('、')}」沒辦法自動展開`);
-        const bf = b.id == null ? null : M.get('buildings', b.id).floors, no = bf ? fl.filter(f => !bf.includes(f)) : [];
+        const bf = b.id == null ? null : M.get('buildings', b.id).floors, no = bf ? fl.filter(f => f !== '無' && !bf.includes(f)) : [];   // 「無」＝一層都不出現
         if (no.length) throw new Error(`${r['棟別']} 沒有 ${no.join('、')}，請先在「棟別樓層」加上這層`);
-        fl = [...fl];
+        fl = fl.includes('無') ? ['無'] : [...fl];
       }
       return { k: bn + '|' + code, nm: bn + ' ' + code, ex, base: { building_id: b.id, sort: ns('u' + b.id, mine), active: true }, want: { code, floors: fl, sort: s, active: a } };
     } });

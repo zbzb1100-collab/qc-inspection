@@ -408,3 +408,4 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .lt-add{display:flex;gap:6px;flex-wrap:wrap}.lt-add input{flex:1 1 180px;min-width:0}.lt-add button{white-space:nowrap}
 .bld-pick .chip{font-size:17px;padding:10px 18px}
 @media (max-width:600px){.lt .nm{width:auto;min-width:96px}.lt td.nm input{min-width:90px;width:100%}.lt td.wide{min-width:200px}}
+.lt td.nm .hint.warn{color:var(--todo);font-size:12px;padding-left:8px}
