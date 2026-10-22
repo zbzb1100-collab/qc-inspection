@@ -249,9 +249,9 @@ function tabStruct(root) {
       const all = b.floors;
       const eff = u => (u.floors || []).length ? all.filter(f => u.floors.includes(f)) : all;
       const setFloors = (u, fl) => q(sb.from('units').update({ floors: fl.length === all.length ? [] : fl.length ? fl : ['無'] }).eq('id', u.id));   // 一層都不勾存「無」（空的＝每層都有）
-      const cols = [{ head: '每層都有', cls: 'allcol', cell: u => {
+      const cols = [{ head: '全選／全不選', cls: 'allcol', cell: u => {
         const on = eff(u).length === all.length;
-        return checkCell(on, (v, back) => { if (!v) { back(); toast('取消「每層都有」：直接把不需要的樓層取消勾選'); return; } adminSave(() => setFloors(u, all), back); }, `${u.code} 每層都有`);
+        return checkCell(on, (v, back) => adminSave(() => setFloors(u, v ? all : []), back, v ? `${u.code} 每層都勾` : `${u.code} 全部取消`), `${u.code} 全選／全不選`);
       } }].concat(all.map(f => ({ head: f, cell: u => checkCell(eff(u).includes(f), (v, back) => {
         const fl = all.filter(x => x === f ? v : eff(u).includes(x));
         adminSave(() => setFloors(u, fl), back, '');
