@@ -21,6 +21,7 @@ await page.addInitScript(() => {
   T.buildings.forEach(b => { b.zone_id = 1; });
   T.buildings.push({ id: 9, site_id: 1, name: 'A棟', floors: ['1F', 'R1F'], sort: 1, active: true, zone_id: 2 });
   T.units.push({ id: 9, building_id: 9, code: '梯廳', floors: [], sort: 1, active: true });
+  T.items.forEach(i => { i.zone_id = 1; i.zone_ids = [1]; });
 });
 await page.route('**/*', r => {
   const u = r.request().url();
@@ -63,10 +64,13 @@ const setCell = (sh, match, col, v) => { const ws = wb4.Sheets[sh]; const rows =
 setCell('戶別', r => r[2] === '梯廳', 'D', 'R1F');
 setCell('檢查類型', r => r[1] === '交屋檢查', 'A', '專有戶、公設');
 setCell('工項', r => r[1] === '10油漆', 'A', '公設');
+ok(XLSX.utils.sheet_to_json(wb4.Sheets['缺失內容'], { header: 1 })[0].join() === '區分,工項,缺失內容,排序,狀態', '缺失內容有區分欄');
+XLSX.utils.sheet_add_aoa(wb4.Sheets['缺失內容'], [['公設', '10油漆', '牆面油漆不勻', '', '']], { origin: -1 });
 const p5 = '/tmp/claude-0/xl/zin2.xlsx'; XLSX.writeFile(wb4, p5);
 await page.locator('#xl-file').setInputFiles(p5); await page.waitForSelector('#xl-go'); await page.click('#xl-go'); await page.waitForTimeout(800);
 const db5 = await page.evaluate(() => window.__db.T);
 ok(JSON.stringify(db5.units.find(u => u.code === '梯廳').floors) === '["R1F"]', 'Excel 設定使用空間樓層');
+ok(db5.items.filter(i => i.name === '牆面油漆不勻').map(i => i.zone_id).sort().join() === '1,2', 'Excel 公設新增同名缺失內容＝公設自己一份');
 ok(JSON.stringify(db5.inspect_types[0].zone_ids) === '[1,2]' && JSON.stringify(db5.categories[1].zone_ids) === '[2]', 'Excel 設定檢查類型、工項的區分');
 setCell('戶別', r => r[2] === '梯廳', 'D', '9F');
 const p6 = '/tmp/claude-0/xl/zin3.xlsx'; XLSX.writeFile(wb4, p6);

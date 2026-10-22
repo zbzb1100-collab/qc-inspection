@@ -199,12 +199,23 @@ function xlCompute(stage, data, pend) {
       const n = need(r, '工項'), ex = S.m.categories.find(c => c.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       return { k: n, nm: n, ex, base: { sort: ns('c', S.m.categories), active: true }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('cat', r) } };
     } });
-    case 'item': return xlStage('缺失內容', 'items', rowsOf('item'), { scope: () => S.m.items.map(e => ({ ex: e, k: M.name('categories', e.category_id) + '|' + e.name, nm: M.name('categories', e.category_id) + ' ／ ' + e.name })), used: e => XL_USE.item.has(e.id), row: r => {
-      const cn = need(r, '工項'), n = need(r, '缺失內容'), c = findC(cn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
-      const ex = c.id == null ? null : S.m.items.find(x => x.category_id === c.id && x.name === n);
-      const mine = S.m.items.filter(x => x.category_id === c.id);
-      return { k: cn + '|' + n, nm: cn + ' ／ ' + n, ex, base: { category_id: c.id, sort: ns('i' + c.id, mine), active: true }, want: { name: n, sort: s, active: a, zone_ids: S.noItemZones ? undefined : zoneIds('item', r) } };
-    } });
+    case 'item': {
+      if (S.noItemZones) return xlStage('缺失內容', 'items', rowsOf('item'), { scope: () => S.m.items.map(e => ({ ex: e, k: M.name('categories', e.category_id) + '|' + e.name, nm: M.name('categories', e.category_id) + ' ／ ' + e.name })), used: e => XL_USE.item.has(e.id), row: r => {
+        const cn = need(r, '工項'), n = need(r, '缺失內容'), c = findC(cn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
+        const ex = c.id == null ? null : S.m.items.find(x => x.category_id === c.id && x.name === n);
+        const mine = S.m.items.filter(x => x.category_id === c.id);
+        return { k: cn + '|' + n, nm: cn + ' ／ ' + n, ex, base: { category_id: c.id, sort: ns('i' + c.id, mine), active: true }, want: { name: n, sort: s, active: a } };
+      } });
+      // 缺失內容各區一份：同一工項兩區可以同名，用「區分＋工項＋缺失內容」辨識；舊檔沒有「區分」欄＝都算第一區
+      const hasZ = data.item && data.item.hasZone, iz = i => i.zone_id || zone0.id;
+      return xlStage('缺失內容', 'items', rowsOf('item'), { scope: () => S.m.items.filter(e => hasZ || iz(e) === zone0.id).map(e => ({ ex: e, k: M.name('zones', iz(e)) + '|' + M.name('categories', e.category_id) + '|' + e.name, nm: `${M.name('zones', iz(e))} ${M.name('categories', e.category_id)} ／ ${e.name}` })), used: e => XL_USE.item.has(e.id), row: r => {
+        if (splitNames(r['區分'] || '').length > 1) throw new Error(`缺失內容「${r['缺失內容']}」：一列只能填一個區分，兩區都要請寫成兩列`);
+        const z = rowZone(r), cn = need(r, '工項'), n = need(r, '缺失內容'), c = findC(cn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
+        const ex = c.id == null ? null : S.m.items.find(x => x.category_id === c.id && x.name === n && iz(x) === z.id);
+        const mine = S.m.items.filter(x => x.category_id === c.id && iz(x) === z.id);
+        return { k: z.name + '|' + cn + '|' + n, nm: `${z.name} ${cn} ／ ${n}`, ex, base: { category_id: c.id, sort: ns('i' + c.id + '_' + z.id, mine), active: true, zone_id: z.id, zone_ids: [z.id] }, want: { name: n, sort: s, active: a } };
+      } });
+    }
     case 'catvend': {                                     // 工項 ↔ 預設廠商（只新增對應）
       const res = { label: '工項的預設廠商', table: 'category_vendors', inserts: [], updates: [], warns: [], names: [] };
       rowsOf('cat').forEach(r => {

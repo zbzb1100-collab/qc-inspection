@@ -95,7 +95,7 @@ function imResolve(r, photos) {
   const t = imFind(M.list('inspect_types'), r['檢查類型']); if (!t) o.bad.push('檢查類型'); o.inspect_type_id = t && t.id;
   const sp = imFind(M.list('spaces'), r['空間']); o.space_id = sp ? sp.id : null;
   const c = imFind(M.list('categories'), r['工項']); o.category_id = c ? c.id : null;
-  const it = c && imFind(M.itemsOf(c.id), r['缺失內容']); o.item_id = it ? it.id : null;
+  const it = c && imFind(M.itemsOf(c.id, u ? M.unitZone(u) : null), r['缺失內容']); o.item_id = it ? it.id : null;
   const rm = imFind(M.list('repair_methods'), r['修繕方式']); o.repair_method_id = rm ? rm.id : null;
   const fv = imFind(M.list('vendors'), r['修繕廠商']) || (c && M.vendorsOfCat(c.id)[0]);
   o.fix_vendor_id = fv ? fv.id : null;
@@ -163,7 +163,7 @@ function imMountPreview(out, list, onDone) {
       tr.appendChild(cu);
       const cs = el('td'); cs.appendChild(o.pick.space ? cellSel(o, 'space_id', M.list('spaces')) : document.createTextNode(M.name('spaces', o.space_id))); tr.appendChild(cs);
       const cc = el('td'); cc.appendChild(o.pick.cat ? cellSel(o, 'category_id', M.list('categories')) : document.createTextNode(M.name('categories', o.category_id))); tr.appendChild(cc);
-      const ci = el('td'); ci.appendChild(!(o.pick.item || o.pick.cat) ? document.createTextNode(M.name('items', o.item_id)) : (o.category_id ? cellSel(o, 'item_id', M.itemsOf(o.category_id)) : el('span', 'hint', '先選工項'))); tr.appendChild(ci);
+      const ci = el('td'); ci.appendChild(!(o.pick.item || o.pick.cat) ? document.createTextNode(M.name('items', o.item_id)) : (o.category_id ? cellSel(o, 'item_id', M.itemsOf(o.category_id, o.unit_id ? M.unitZone(M.get('units', o.unit_id)) : null)) : el('span', 'hint', '先選工項'))); tr.appendChild(ci);
       [[cs, o.pick.space, '空間'], [cc, o.pick.cat, '工項'], [ci, o.pick.item || o.pick.cat, '缺失內容']].forEach(([td, p, k]) => { if (p) td.prepend(el('div', 'hint', '原文：' + (r[k] || '（空白）'))); });
       const cd = el('td', null, (o.description || '') + `\n照片 ${o.photoFiles.length} 張` + (o.missingPhotos.length ? `（找不到：${o.missingPhotos.join('、')}）` : '') + (r['對應備註'] ? `\n備註：${r['對應備註']}` : ''));
       tr.appendChild(cd);

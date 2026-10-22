@@ -341,11 +341,10 @@ function tabCat(root) {
   const body = section(root, '工項', '填寫缺失時的「工項」按鈕；按「缺失內容」可設定它底下的缺失與預設廠商', 'sec-cat');
   const detail = c => {
     const box = el('div', 'stack');
-    box.appendChild(el('label', 'f', zid ? `${c.name} 在${M.name('zones', zid)}的缺失內容（另一區也要用的，勾右邊「也用」）` : `${c.name} 的缺失內容`));
-    if (S.noItemZones && !S.noZones) box.appendChild(el('div', 'banner', '缺失內容還不能分專有戶／公設：請到 Supabase 執行 17_缺失內容分區.sql 一次。'));
-    listTable(box, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id && M.inZone(i, zid)).sort(bySort),
-      cols: S.noItemZones ? [] : zoneCols('items', r => r.name), zoned: !S.noItemZones,
-      onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i, ...(S.noItemZones ? {} : zoneNew()) })))),
+    box.appendChild(el('label', 'f', zid ? `${c.name} 在${M.name('zones', zid)}的缺失內容（只影響${M.name('zones', zid)}，另一區有自己的一份）` : `${c.name} 的缺失內容`));
+    if (S.noItemZones && !S.noZones) box.appendChild(el('div', 'banner', '缺失內容還不能分專有戶／公設：請到 Supabase 執行 18_缺失內容各區一份.sql 一次。'));
+    listTable(box, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id && M.itemIn(i, zid)).sort(bySort),
+      onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i, ...(S.noItemZones || !zid ? {} : { zone_id: zid, zone_ids: [zid] }) })))),
       placeholder: '新增缺失內容（可用「、」一次輸入多個）' });
     box.appendChild(el('label', 'f', `${c.name} 的預設廠商（點選＝加入／移除，可多家；填寫時變成「修繕廠商」按鈕）`));
     const vb = el('div', 'chips'); box.appendChild(vb);
@@ -364,7 +363,7 @@ function tabCat(root) {
   };
   listTable(body, { key: 'cat', table: 'categories', zoned: true, rows: M.list('categories', false).filter(c => M.inZone(c, zid)), cols: [
       { head: '預設廠商', cls: 'left', cell: c => el('span', 'hint', M.vendorsOfCat(c.id).map(v => v.name).join('、') || '—') }, ...zoneCols('categories', r => r.name)],
-    detail, detailLabel: c => `缺失內容 ${S.m.items.filter(i => i.category_id === c.id && i.active !== false && M.inZone(i, zid)).length}`,
+    detail, detailLabel: c => `缺失內容 ${S.m.items.filter(i => i.category_id === c.id && i.active !== false && M.itemIn(i, zid)).length}`,
     onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew() })))),
     placeholder: '新增工項，例：木地板工程' });
 }

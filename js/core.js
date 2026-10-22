@@ -37,7 +37,7 @@ async function loadMaster() {
   const zs = await sb.from('zones').select('*');
   S.m.zones = zs.error ? [] : (zs.data || []); S.noZones = !!zs.error;
   S.noSpaceZones = S.noZones || (S.m.spaces.length > 0 && !('zone_ids' in S.m.spaces[0]));   // 16_空間別分區.sql 還沒執行
-  S.noItemZones = S.noZones || (S.m.items.length > 0 && !('zone_ids' in S.m.items[0]));      // 17_缺失內容分區.sql 還沒執行
+  S.noItemZones = S.noZones || (S.m.items.length > 0 && !('zone_id' in S.m.items[0]));       // 18_缺失內容各區一份.sql 還沒執行
 }
 const bySort = (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || String(a.name ?? a.code ?? '').localeCompare(String(b.name ?? b.code ?? ''), 'zh-Hant', { numeric: true });
 const act = rows => rows.filter(r => r.active !== false);
@@ -47,7 +47,9 @@ const M = {
   name: (t, id) => { const r = M.get(t, id); return r ? (r.name ?? r.code) : ''; },
   unitCode: id => { const u = M.get('units', id); return u ? u.code : ''; },
   userName: id => { const p = S.m.profiles.find(p => p.id === id); return p ? (p.name || p.email || '') : ''; },
-  itemsOf: (cid, zid) => M.list('items').filter(i => i.category_id === cid && M.inZone(i, zid)),   // zid 有給：只列這一區的缺失內容
+  itemsOf: (cid, zid) => M.list('items').filter(i => i.category_id === cid && M.itemIn(i, zid)),   // zid 有給：只列這一區的缺失內容
+  // 缺失內容各區一份（items.zone_id）；還沒執行 18 的舊資料照 zone_ids，再舊的每區都有
+  itemIn: (i, zid) => !zid || (i.zone_id != null ? i.zone_id === zid : M.inZone(i, zid)),
   vendorsOfCat: cid => S.m.category_vendors.filter(cv => cv.category_id === cid).sort((a, b) => a.sort - b.sort)
     .map(cv => M.get('vendors', cv.vendor_id)).filter(v => v && v.active !== false),
   // 空間別是一份總清單（可分專有戶／公設）；每戶設定了哪些空間，填寫時就只出現那些（＋全室）。這戶沒設定時，改看平面圖標記；都沒有就顯示這一區全部。
