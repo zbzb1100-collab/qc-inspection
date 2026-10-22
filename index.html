@@ -7,7 +7,7 @@
 <script>try{document.documentElement.dataset.skin=localStorage.getItem('qc-skin')||'pro'}catch(e){document.documentElement.dataset.skin='pro'}</script>
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610221430">
+<link rel="stylesheet" href="css/app.css?v=202610221530">
 </head>
 <body>
 
@@ -42,12 +42,23 @@
       <p class="hero-tag">從細節出發，築起更好的建築品質</p>
     </div>
     <form class="card stack login-card" id="login-form" autocomplete="on">
-      <div><h2>登入系統</h2><span class="hint">請用管理者給你的帳號登入</span></div>
+      <div><h2>登入系統</h2><span class="hint">用你的 Email 和密碼登入</span></div>
       <label class="lf"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><input type="email" id="l-email" name="email" autocomplete="username" placeholder="帳號（Email）" aria-label="帳號（Email）" required></label>
       <label class="lf"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><input type="password" id="l-pass" name="password" autocomplete="current-password" placeholder="密碼" aria-label="密碼" required><button type="button" class="eye" id="l-eye" aria-label="顯示密碼"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></label>
       <label class="remember"><input type="checkbox" id="l-remember"> 記住帳號</label>
       <div class="err" id="l-err" role="alert"></div>
       <button class="btn block" id="l-go" type="submit">登入 <span aria-hidden="true">→</span></button>
+      <button class="btn ghost block" id="l-apply" type="button">還沒有帳號？申請帳號</button>
+    </form>
+    <form class="card stack login-card" id="apply-form" autocomplete="on" hidden>
+      <div><h2>申請帳號</h2><span class="hint">送出後，管理者開通就能登入</span></div>
+      <label class="lf"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><input type="text" id="a-name" name="name" autocomplete="name" placeholder="姓名（例：王小明）" aria-label="姓名" required></label>
+      <label class="lf"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><input type="email" id="a-email" name="email" autocomplete="username" placeholder="Email（之後用這個登入）" aria-label="Email" required></label>
+      <label class="lf"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><input type="password" id="a-pass" name="new-password" autocomplete="new-password" placeholder="設定密碼（至少 6 碼）" aria-label="設定密碼" minlength="6" required></label>
+      <label class="lf"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><input type="password" id="a-pass2" autocomplete="new-password" placeholder="再輸入一次密碼" aria-label="再輸入一次密碼" minlength="6" required></label>
+      <div class="err" id="a-err" role="alert"></div>
+      <button class="btn block" id="a-go" type="submit">送出申請</button>
+      <button class="btn ghost block" id="a-back" type="button">← 回登入</button>
     </form>
     <p class="login-foot">品質・安全・永續<small>BETTER SPACES FOR A BRIGHTER TOMORROW</small></p>
   </div>
@@ -213,15 +224,15 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610221430"></script>
-<script src="js/core.js?v=202610221430"></script>
-<script src="js/pick.js?v=202610221430"></script>
-<script src="js/sheet.js?v=202610221430"></script>
-<script src="js/report.js?v=202610221430"></script>
-<script src="js/admin.js?v=202610221430"></script>
-<script src="js/admin_excel.js?v=202610221430"></script>
-<script src="js/admin_import.js?v=202610221430"></script>
-<script src="js/jobs.js?v=202610221430"></script>
-<script src="js/main.js?v=202610221430"></script>
+<script src="config.js?v=202610221530"></script>
+<script src="js/core.js?v=202610221530"></script>
+<script src="js/pick.js?v=202610221530"></script>
+<script src="js/sheet.js?v=202610221530"></script>
+<script src="js/report.js?v=202610221530"></script>
+<script src="js/admin.js?v=202610221530"></script>
+<script src="js/admin_excel.js?v=202610221530"></script>
+<script src="js/admin_import.js?v=202610221530"></script>
+<script src="js/jobs.js?v=202610221530"></script>
+<script src="js/main.js?v=202610221530"></script>
 </body>
 </html>

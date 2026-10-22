@@ -1,0 +1,56 @@
+// 申請帳號：登入頁申請 → 不能登入（待開通）→ 管理者開通 → 可以登入
+import { createRequire } from 'module';
+import fs from 'fs';
+const require = createRequire('/opt/node22/lib/node_modules/');
+const { chromium } = require('playwright');
+const root = new URL('..', import.meta.url).pathname;
+const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');
+const results = []; const fail = [];
+const ok = (c, m) => { results.push((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail.push(m); };
+const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] }).catch(() => chromium.launch({ args: ['--no-sandbox'] }));
+const page = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage();
+const errors = []; page.on('pageerror', e => errors.push(e.message));
+await page.addInitScript(mock);
+await page.route('**/*', r => {
+  const u = r.request().url();
+  if (u.startsWith('file://')) return r.continue();
+  if (u.includes('supabase')) return r.fulfill({ contentType: 'application/javascript', body: '' });
+  return r.fulfill({ contentType: 'text/css', body: '' });
+});
+await page.goto('file://' + root + 'index.html');
+await page.waitForSelector('#login:not([hidden])');
+await page.click('#l-apply');
+ok(await page.isVisible('#apply-form') && !(await page.isVisible('#login-form')), '按申請帳號換成申請表');
+await page.fill('#a-name', '王小明'); await page.fill('#a-email', 'new@x.com'); await page.fill('#a-pass', 'pw1234'); await page.fill('#a-pass2', 'pw9999');
+await page.click('#a-go');
+ok((await page.textContent('#a-err')).includes('不一樣'), '兩次密碼不同會提示');
+await page.fill('#a-pass2', 'pw1234'); await page.click('#a-go');
+await page.waitForSelector('#login-form:not([hidden])');
+ok((await page.textContent('#l-err')).includes('已送出申請') && await page.inputValue('#l-email') === 'new@x.com', '送出後回登入頁並提示等開通');
+const np = await page.evaluate(() => window.__db.T.profiles.find(p => p.email === 'new@x.com'));
+ok(np && np.active === false && np.pending === true && np.name === '王小明', '新帳號先停用、待開通、有姓名');
+await page.click('#l-apply'); await page.fill('#a-name', 'x'); await page.fill('#a-email', 'new@x.com'); await page.fill('#a-pass', 'pw1234'); await page.fill('#a-pass2', 'pw1234'); await page.click('#a-go');
+await page.waitForTimeout(200);
+ok((await page.textContent('#a-err')).includes('已經申請過'), '同一個 Email 不能重複申請');
+await page.click('#a-back');
+// 待開通的人登入（mock 密碼一律 pw）
+await page.fill('#l-email', 'new@x.com'); await page.fill('#l-pass', 'pw'); await page.click('#l-go'); await page.waitForTimeout(400);
+ok(await page.isVisible('#login') && (await page.textContent('#l-err')).includes('等管理者開通'), '待開通不能登入');
+// 管理者開通
+await page.fill('#l-email', 'boss@x.com'); await page.fill('#l-pass', 'pw'); await page.click('#l-go');
+await page.waitForSelector('#app:not([hidden])');
+await page.waitForTimeout(800);
+ok((await page.textContent('#toast')).includes('1 個帳號申請'), '管理者登入看到待開通提醒');
+await page.click('#t-admin'); await page.waitForSelector('#adm-tabs');
+ok((await page.textContent('#adm-tabs button[data-tab=user]')).includes('（1）'), '帳號分頁標示待開通數');
+await page.click('#adm-tabs button[data-tab=user]');
+ok((await page.textContent('#admin-root')).includes('待開通 1 個：王小明'), '帳號頁列出待開通');
+const row = page.locator('.sublist .r').first();
+ok((await row.locator('input[type=text]').inputValue()) === '王小明', '待開通排最上面');
+await row.locator('input[type=checkbox]').check(); await row.locator('button:has-text("儲存")').click(); await page.waitForTimeout(400);
+const np2 = await page.evaluate(() => window.__db.T.profiles.find(p => p.email === 'new@x.com'));
+ok(np2.active === true && np2.pending === false, '勾啟用儲存＝開通');
+ok(!errors.length, 'JS 錯誤：' + errors.join(' | '));
+console.log(results.join('\n'));
+await browser.close();
+if (fail.length) process.exit(1);

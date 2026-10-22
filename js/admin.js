@@ -203,7 +203,7 @@ const ADMIN_TABS = [['struct', '選戶架構'], ['space', '空間別'], ['cat', 
 function renderAdmin() {
   const root = $('admin-root'); root.innerHTML = '';
   const tabs = el('div', 'adm-tabs'); tabs.id = 'adm-tabs';
-  ADMIN_TABS.forEach(([k, n]) => { const b = el('button', adminTab === k ? 'on' : null, n); b.type = 'button'; b.dataset.tab = k; b.onclick = () => { adminTab = k; renderAdmin(); $('admin-root').closest('main')?.scrollTo(0, 0); }; tabs.appendChild(b); });
+  ADMIN_TABS.forEach(([k, n]) => { const w = k === 'user' ? S.m.profiles.filter(p => p.pending && !p.active).length : 0; const b = el('button', adminTab === k ? 'on' : null, n + (w ? `（${w}）` : '')); b.type = 'button'; b.dataset.tab = k; b.onclick = () => { adminTab = k; renderAdmin(); $('admin-root').closest('main')?.scrollTo(0, 0); }; tabs.appendChild(b); });
   root.appendChild(tabs);
   if (['struct', 'space', 'cat', 'plan'].includes(adminTab)) zoneBar(root);
   ({ struct: tabStruct, space: tabSpace, cat: tabCat, vendor: tabVendor, plan: renderPlanAdmin, user: renderUserAdmin, other: tabOther,
@@ -535,12 +535,14 @@ async function renderMarkEditor(box, plan) {
 // ================= 帳號 =================
 function renderUserAdmin(root) {
   const g = group('user', '帳號', '誰能登入、是一般／管理者／廠商；離職的取消「啟用」'); root.appendChild(g.d);
-  g.body.appendChild(el('div', 'banner', '新增帳號：到 Supabase 後台 Authentication → Users → Add user，建好後這裡就會出現，可改名字、設管理者、離職時停用。廠商帳號：角色選「廠商」並選是哪一家，他只會看到修繕廠商是自己的缺失，只能拍修繕後照片、按修繕完成。'));
+  g.body.appendChild(el('div', 'banner', '新增帳號：請同事在登入頁按「申請帳號」，填姓名、Email、密碼。申請的帳號會出現在最上面「待開通」，選好角色、勾「啟用」再按儲存就能登入。離職的取消「啟用」。廠商帳號：角色選「廠商」並選是哪一家，他只會看到修繕廠商是自己的缺失，只能拍修繕後照片、按修繕完成。'));
+  const wait = S.m.profiles.filter(p => p.pending && !p.active);
+  if (wait.length) g.body.appendChild(el('div', 'banner warn', `待開通 ${wait.length} 個：${wait.map(p => p.name || p.email).join('、')}。確認是自己人再開通；不認識的不要開。`));
   const list = el('div', 'sublist'); g.body.appendChild(list);
-  S.m.profiles.slice().sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')).forEach(p => {
+  S.m.profiles.slice().sort((a, b) => !!(b.pending && !b.active) - !!(a.pending && !a.active) || (a.created_at || '').localeCompare(b.created_at || '')).forEach(p => {
     const self = p.id === S.user.id;
     const r = el('div', 'r'); const nm = el('input'); nm.type = 'text'; nm.value = p.name || ''; nm.placeholder = '顯示名稱'; nm.style.flex = '1'; nm.style.minWidth = '110px';
-    const em = el('span', 'hint', p.email || ''); em.style.width = '100%';
+    const em = el('span', 'hint', (p.pending && !p.active ? '🆕 待開通　' : '') + (p.email || '')); em.style.width = '100%';
     const role = el('select'); [['user', '一般'], ['admin', '管理者'], ['vendor', '廠商']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; role.appendChild(o); }); role.value = p.role; role.style.width = 'auto';
     const ven = el('select'); fillSelect(ven, M.list('vendors'), p.vendor_id, '（選哪家廠商）'); ven.style.width = 'auto'; ven.hidden = p.role !== 'vendor';
     role.onchange = () => { ven.hidden = role.value !== 'vendor'; };
@@ -549,6 +551,7 @@ function renderUserAdmin(root) {
     const sv = el('button', 'btn small', '儲存'); sv.onclick = () => guard(sv, async () => {
       if (role.value === 'vendor' && !ven.value) throw new Error('廠商帳號要選是哪一家廠商');
       const patch = { name: nm.value.trim(), role: role.value, active: ck.checked };
+      if (p.pending && ck.checked) patch.pending = false;   // 開通了就不再是待開通
       if (role.value === 'vendor' || p.vendor_id != null) patch.vendor_id = role.value === 'vendor' ? Number(ven.value) : null;
       const { error } = await sb.from('profiles').update(patch).eq('id', p.id);
       if (error) throw (/profiles_role_check|vendor_id/.test(error.message) ? new Error('要先到 Supabase 執行 6_廠商帳號.sql，才能設定廠商帳號') : error);

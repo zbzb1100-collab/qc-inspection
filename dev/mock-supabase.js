@@ -85,6 +85,12 @@
       if (!p || password !== 'pw') return { data: null, error: { message: 'Invalid login credentials' } };
       me = p.id; session = { user: { id: p.id, email } }; return { data: { user: session.user, session }, error: null };
     },
+    async signUp({ email, password, options }) {   // 申請帳號：照 19_申請帳號.sql，先停用、待開通
+      if (T.profiles.some(x => x.email === email)) return { data: null, error: { message: 'User already registered' } };
+      const id = 'u-' + Math.random().toString(36).slice(2); window.__signups = (window.__signups || 0) + 1;
+      T.profiles.push({ id, name: (options && options.data && options.data.name) || email.split('@')[0], email, role: 'user', active: false, pending: true, created_at: new Date().toISOString() });
+      return { data: { user: { id, email }, session: null }, error: null };
+    },
     async signOut() { session = null; me = null; return { error: null }; },
     onAuthStateChange() { return { data: { subscription: { unsubscribe() {} } } }; }
   };
