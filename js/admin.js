@@ -79,10 +79,28 @@ function listTable(box, o) {
       up.onclick = () => adminSave(() => moveRow(o.table, rows, i, -1), null, ''); dn.onclick = () => adminSave(() => moveRow(o.table, rows, i, 1), null, '');
       tools.append(up, dn);
     }
-    const tg = el('button', 'ib', r.active === false ? '啟用' : '停用'); tg.title = r.active === false ? '重新啟用' : '停用：填寫時不再出現，舊紀錄保留';
+    const tg = el('button', 'ib', r.active === false ? '啟用' : '停用'); tg.title = r.active === false ? '重新啟用' : (o.zoned ? '停用：每一區都不再出現，舊紀錄保留' : '停用：填寫時不再出現，舊紀錄保留');
     tg.onclick = () => adminSave(() => q(sb.from(o.table).update({ active: r.active === false }).eq('id', r.id)), null, r.active === false ? '已啟用' : '已停用');
     const mo = el('button', 'ib', '更多'); mo.title = '合併、刪除';
     const moreKey = 'more_' + o.key; mo.onclick = () => { adminSel[moreKey] = adminSel[moreKey] === r.id ? null : r.id; renderAdmin(); };
+    const cur = adminZone();
+    if (o.zoned && cur && M.list('zones').length > 1) {      // 從目前這一區拿掉（另一區不受影響）
+      const zn = M.name('zones', cur), rm = el('button', 'ib', '移除'); rm.title = `從${zn}移除`;
+      rm.onclick = () => {
+        if (!rm.dataset.arm) { rm.dataset.arm = '1'; rm.textContent = `確定從${zn}移除？`; rm.classList.add('on'); setTimeout(() => { if (rm.isConnected) { delete rm.dataset.arm; rm.textContent = '移除'; rm.classList.remove('on'); } }, 4000); return; }
+        guard(rm, async () => {
+          const ids = (r.zone_ids || []).length ? r.zone_ids : M.list('zones').map(z => z.id), rest = ids.filter(z => z !== cur);
+          if (rest.length) { await q(sb.from(o.table).update({ zone_ids: rest }).eq('id', r.id)); await reloadAdmin(); toast(`已從${zn}移除（${rest.map(z => M.name('zones', z)).join('、')}仍保留）`); return; }
+          const { error } = await sb.from(o.table).delete().eq('id', r.id);
+          if (error) {
+            if (!(error.code === '23503' || /foreign key|violates/i.test(error.message))) throw error;
+            await q(sb.from(o.table).update({ active: false }).eq('id', r.id)); await reloadAdmin(); toast(`「${r[nf]}」已有缺失紀錄，改成停用（舊紀錄保留）`); return;
+          }
+          await reloadAdmin(); toast(`已刪除「${r[nf]}」`);
+        });
+      };
+      tools.appendChild(rm);
+    }
     tools.append(tg, mo); tr.appendChild(tools);
     cols.forEach(c => { const td = el('td', c.cls || null); const v = c.cell(r); if (v != null) td.append(v); tr.appendChild(td); });
     if (o.detail) {
@@ -141,8 +159,9 @@ function moreRow(o, r, span) {
     mr.append(ms, mb); box.appendChild(mr);
     box.appendChild(el('p', 'hint', '合併：兩個其實是同一個時用。這一個會消失，它所有舊紀錄改掛到你選的那個。'));
   }
-  const del = el('button', 'btn danger small', `刪除「${label}」`); del.onclick = () => {
-    if (!del.dataset.arm) { del.dataset.arm = '1'; del.textContent = '再按一次確定刪除'; setTimeout(() => { delete del.dataset.arm; del.textContent = `刪除「${label}」`; }, 4000); return; }
+  const delTxt = o.zoned && adminZone() && M.list('zones').length > 1 ? `整筆刪除「${label}」（每一區都刪）` : `刪除「${label}」`;
+  const del = el('button', 'btn danger small', delTxt); del.onclick = () => {
+    if (!del.dataset.arm) { del.dataset.arm = '1'; del.textContent = '再按一次確定刪除'; setTimeout(() => { delete del.dataset.arm; del.textContent = delTxt; }, 4000); return; }
     guard(del, async () => {
       const { error } = await sb.from(o.table).delete().eq('id', r.id);
       if (error) {
@@ -212,7 +231,7 @@ function tabStruct(root) {
       const { error } = await sb.from('inspect_types').update({ need_sign: on }).eq('id', r.id);
       if (error) throw (/need_sign/.test(error.message) ? new Error('要先到 Supabase 執行 7_待簽認.sql') : error);
     }, back), `${r.name} 複驗後要客戶簽認`) }, ...zoneCols('inspect_types', r => r.name)];
-    listTable(body, { key: 'inspect_types', table: 'inspect_types', rows: M.list('inspect_types', false).filter(r => M.inZone(r, zid)), cols,
+    listTable(body, { key: 'inspect_types', table: 'inspect_types', zoned: true, rows: M.list('inspect_types', false).filter(r => M.inZone(r, zid)), cols,
       onAdd: names => q(sb.from('inspect_types').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.inspect_types) + i, ...zoneNew() })))),
       placeholder: '新增檢查類型' }); }
 
@@ -276,7 +295,7 @@ function tabSpace(root) {
     const codeCell = sp => { const i = el('input', 'code-in'); i.type = 'text'; i.value = sp.code && sp.code !== '0' ? sp.code : ''; i.placeholder = '—'; i.title = '平面圖上顯示的代號（選填）';
       i.onkeydown = e => { if (e.key === 'Enter') i.blur(); };
       i.onchange = () => adminSave(() => q(sb.from('spaces').update({ code: i.value.trim() }).eq('id', sp.id)), () => { i.value = sp.code || ''; }); return i; };
-    listTable(body, { key: 'space', table: 'spaces', rows, cols: [{ head: '圖面代號', cell: codeCell }, ...(S.noSpaceZones ? [] : zoneCols('spaces', r => r.name))],
+    listTable(body, { key: 'space', table: 'spaces', zoned: !S.noSpaceZones, rows, cols: [{ head: '圖面代號', cell: codeCell }, ...(S.noSpaceZones ? [] : zoneCols('spaces', r => r.name))],
       merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
         const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
         for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
@@ -325,7 +344,7 @@ function tabCat(root) {
     box.appendChild(el('label', 'f', zid ? `${c.name} 在${M.name('zones', zid)}的缺失內容（另一區也要用的，勾右邊「也用」）` : `${c.name} 的缺失內容`));
     if (S.noItemZones && !S.noZones) box.appendChild(el('div', 'banner', '缺失內容還不能分專有戶／公設：請到 Supabase 執行 17_缺失內容分區.sql 一次。'));
     listTable(box, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id && M.inZone(i, zid)).sort(bySort),
-      cols: S.noItemZones ? [] : zoneCols('items', r => r.name),
+      cols: S.noItemZones ? [] : zoneCols('items', r => r.name), zoned: !S.noItemZones,
       onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i, ...(S.noItemZones ? {} : zoneNew()) })))),
       placeholder: '新增缺失內容（可用「、」一次輸入多個）' });
     box.appendChild(el('label', 'f', `${c.name} 的預設廠商（點選＝加入／移除，可多家；填寫時變成「修繕廠商」按鈕）`));
@@ -343,7 +362,7 @@ function tabCat(root) {
     if (!M.list('vendors').length) vb.appendChild(el('span', 'hint', '還沒有廠商，請先到「廠商」分頁新增。'));
     return box;
   };
-  listTable(body, { key: 'cat', table: 'categories', rows: M.list('categories', false).filter(c => M.inZone(c, zid)), cols: [
+  listTable(body, { key: 'cat', table: 'categories', zoned: true, rows: M.list('categories', false).filter(c => M.inZone(c, zid)), cols: [
       { head: '預設廠商', cls: 'left', cell: c => el('span', 'hint', M.vendorsOfCat(c.id).map(v => v.name).join('、') || '—') }, ...zoneCols('categories', r => r.name)],
     detail, detailLabel: c => `缺失內容 ${S.m.items.filter(i => i.category_id === c.id && i.active !== false && M.inZone(i, zid)).length}`,
     onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew() })))),
