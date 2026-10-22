@@ -12,7 +12,7 @@ const XL_SHEETS = {
 // 有「專有戶／公設」時，棟別樓層、戶別前面多一欄「區分」（兩區可以有同名的棟）；舊檔沒有這欄＝都算第一區
 const xlZoned = () => M.list('zones', false).length > 0;
 const xlOpt = (k, h) => h === '區分' || (k === 'unit' && h === '樓層');   // 新加的欄位：舊檔沒有也能匯入（沒有＝不動）
-const xlHead = k => { const h = (xlZoned() && ['bld', 'unit', 'itype', 'cat', 'space'].includes(k) ? ['區分'] : []).concat(XL_SHEETS[k][1]);
+const xlHead = k => { const h = (xlZoned() && ['bld', 'unit', 'itype', 'cat', 'space', 'item'].includes(k) ? ['區分'] : []).concat(XL_SHEETS[k][1]);
   if (xlZoned() && k === 'unit') h.splice(h.indexOf('戶別') + 1, 0, '樓層'); return h; };
 const xlZoneList = r => (r.zone_ids || []).map(z => M.name('zones', z)).filter(Boolean).join('、');   // 檢查類型、工項：空白＝每區都出現
 const xlZoneName = b => xlZoned() ? M.name('zones', M.bldZone(b)) : '';
@@ -70,7 +70,7 @@ function xlBuildBook(withData) {
     cat: M.list('categories', false).map(c => (xlZoned() ? [xlZoneList(c)] : []).concat([c.name, S.m.category_vendors.filter(x => x.category_id === c.id).sort((a, b) => a.sort - b.sort)
       .map(x => M.name('vendors', x.vendor_id)).filter(Boolean).join('、'), c.sort, xlState(c.active)])),
     item: S.m.items.slice().sort((a, b) => (M.get('categories', a.category_id).sort - M.get('categories', b.category_id).sort) || bySort(a, b))
-      .map(i => [M.name('categories', i.category_id), i.name, i.sort, xlState(i.active)]),
+      .map(i => (xlZoned() ? [xlZoneList(i)] : []).concat([M.name('categories', i.category_id), i.name, i.sort, xlState(i.active)])),
     vendor: M.list('vendors', false).map(v => [v.name, xlState(v.active)]),
     method: M.list('repair_methods', false).map(r => [r.name, r.sort, xlState(r.active)]),
     itype: M.list('inspect_types', false).map(r => (xlZoned() ? [xlZoneList(r)] : []).concat([r.name, r.sort, xlState(r.active)])),
@@ -203,7 +203,7 @@ function xlCompute(stage, data, pend) {
       const cn = need(r, '工項'), n = need(r, '缺失內容'), c = findC(cn), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const ex = c.id == null ? null : S.m.items.find(x => x.category_id === c.id && x.name === n);
       const mine = S.m.items.filter(x => x.category_id === c.id);
-      return { k: cn + '|' + n, nm: cn + ' ／ ' + n, ex, base: { category_id: c.id, sort: ns('i' + c.id, mine), active: true }, want: { name: n, sort: s, active: a } };
+      return { k: cn + '|' + n, nm: cn + ' ／ ' + n, ex, base: { category_id: c.id, sort: ns('i' + c.id, mine), active: true }, want: { name: n, sort: s, active: a, zone_ids: S.noItemZones ? undefined : zoneIds('item', r) } };
     } });
     case 'catvend': {                                     // 工項 ↔ 預設廠商（只新增對應）
       const res = { label: '工項的預設廠商', table: 'category_vendors', inserts: [], updates: [], warns: [], names: [] };

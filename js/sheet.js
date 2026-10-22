@@ -104,7 +104,7 @@ function paintChoices() {
     if (!cur.respTouched) cur.resp_vendor_id = cur.fix_vendor_id;
     paintChoices();
   });
-  const items = cur.category_id ? M.itemsOf(cur.category_id) : [];
+  const items = cur.category_id ? M.list('items').filter(i => i.category_id === cur.category_id && (M.inZone(i, zid) || i.id === cur.item_id)) : [];
   chips($('sh-item'), items, cur.item_id, r => { cur.item_id = r.id; paintChoices(); },
     { empty: cur.category_id ? '此工項尚無缺失內容，請管理者新增' : '請先選工項' });
   chips($('sh-method'), M.list('repair_methods'), cur.repair_method_id, r => { cur.repair_method_id = cur.repair_method_id === r.id ? null : r.id; paintChoices(); });

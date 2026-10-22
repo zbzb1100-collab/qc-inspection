@@ -25,7 +25,7 @@ await page.addInitScript(() => {   // 專有戶／公設 測試資料
   T.inspect_types[0].zone_ids = [1];
   T.inspect_types.push({ id: 2, name: '第三方驗收', sort: 2, active: true, zone_ids: [2] });
   T.categories[0].zone_ids = [1, 2]; T.categories[1].zone_ids = [1];
-  T.spaces.forEach(sp => { sp.zone_ids = [1]; }); T.spaces.push({ id: 9, inspect_type_id: 1, code: '', name: '全區', sort: 9, active: true, zone_ids: [2] });
+  T.items.forEach(i => { i.zone_ids = []; }); T.spaces.forEach(sp => { sp.zone_ids = [1]; }); T.spaces.push({ id: 9, inspect_type_id: 1, code: '', name: '全區', sort: 9, active: true, zone_ids: [2] });
 });
 await page.route('**/*', r => {
   const u = r.request().url();
@@ -116,6 +116,16 @@ ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.id =
 await page.check('#sec-unit input[title="視聽室 B1"]'); await page.waitForTimeout(300);
 await addIn('#sec-unit', '機房', 'B1');
 ok(JSON.stringify(await page.evaluate(() => window.__db.T.units.find(u => u.code === '機房').floors)) === '["B1"]', '新增使用空間時直接指定樓層');
+await tab('cat');
+await page.click('#sec-cat tr[data-name="10油漆"] button:has-text("缺失內容")'); await page.waitForTimeout(200);
+await addIn('#sec-cat tr.detail', '公設牆面髒污');
+ok(JSON.stringify(await page.evaluate(() => window.__db.T.items.find(i => i.name === '公設牆面髒污').zone_ids)) === '[2]', '在公設新增的缺失內容只屬公設');
+await page.uncheck('#sec-cat tr.detail input[title="牆面油漆不勻 也用在專有戶"]'); await page.waitForTimeout(300);
+ok(JSON.stringify(await page.evaluate(() => window.__db.T.items.find(i => i.name === '牆面油漆不勻').zone_ids)) === '[2]', '取消「專有戶也用」：這條只剩公設');
+await zbtn('專有戶');
+ok((await names('#sec-cat tr.detail')) === '', '專有戶的油漆看不到公設專用的缺失內容');
+ok(await page.evaluate(() => M.itemsOf(2, 1).length === 0 && M.itemsOf(2, 2).length === 2), '填寫時依戶別所在區列缺失內容');
+await zbtn('公設');
 await tab('space');
 ok((await names('#sec-space')) === '全區', '後台公設的空間別清單只列公設的');
 await addIn('#sec-space', '機電空間');
