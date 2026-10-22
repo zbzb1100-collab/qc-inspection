@@ -403,7 +403,9 @@ function tabOther(root) {
 function planName(p) { return p; }
 async function uploadPlan(unit, variant, file) {
   const ext = (file.name.match(/\.(png|jpe?g|webp)$/i) || [, 'png'])[1].toLowerCase();
-  const path = `${unit.code}${variant === '標準層' ? '' : '-' + variant}_${Date.now()}.${ext}`;
+  // 雲端檔名只能用英數字：中文名稱的使用空間（例：藝術大廳）會被拒絕，所以用編號＋時間命名，畫面上還是顯示原本名稱
+  const safe = x => String(x).replace(/[^A-Za-z0-9_-]/g, '') || 'x';
+  const path = `u${unit.id}-${safe(unit.code)}${variant === '標準層' ? '' : '-' + safe(variant)}_${Date.now()}.${ext}`;
   const up = await sb.storage.from('plans').upload(path, file, { contentType: file.type || 'image/' + (ext === 'jpg' ? 'jpeg' : ext), upsert: true });
   if (up.error) throw up.error;
   const old = S.m.plans.find(p => p.unit_id === unit.id && p.variant === variant);
