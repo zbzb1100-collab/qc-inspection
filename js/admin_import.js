@@ -3,7 +3,8 @@ const IM_HEAD = ['棟別', '樓層', '戶別', '檢查類型', '空間', '工項
 const IM_NEED = ['棟別', '樓層', '戶別', '檢查類型', '空間', '工項', '缺失內容'];
 
 // 匯入範本：標題列鎖住；每格都有下拉（清單取自目前系統設定），樓層／戶別跟著棟別、缺失內容跟著工項
-const IM_WIDTH = { 棟別: 8, 樓層: 8, 戶別: 8, 檢查類型: 14, 空間: 10, 工項: 13, 缺失內容: 30, 修繕方式: 12, 修繕廠商: 20, 責任廠商: 20, 缺失說明: 40, 照片: 22, 報告編號: 12, 對應備註: 30 };
+// 有分專有戶／公設時，最前面多一欄「區分」：棟別、檢查類型、空間、工項跟著區分；樓層、戶別跟著「區分＋棟別」；缺失內容跟著「區分＋工項」（兩區可以有同名的棟和缺失內容）
+const IM_WIDTH = { 區分: 9, 棟別: 8, 樓層: 8, 戶別: 8, 檢查類型: 14, 空間: 10, 工項: 13, 缺失內容: 30, 修繕方式: 12, 修繕廠商: 20, 責任廠商: 20, 缺失說明: 40, 照片: 22, 報告編號: 12, 對應備註: 30 };
 async function imTemplate() {
   if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
   const wb = new ExcelJS.Workbook();
@@ -15,19 +16,32 @@ async function imTemplate() {
   const put = (c, title, vals, bold = true) => { ls.getCell(1, c + 1).value = title; ls.getCell(1, c + 1).font = { bold }; vals.forEach((v, i) => { ls.getCell(i + 2, c + 1).value = v; }); };
   const single = (title, vals) => { const c = col++; put(c, title, vals); return `'清單'!$${L(c)}$2:$${L(c)}$${Math.max(2, vals.length + 1)}`; };
   const group = (title, pairs) => { col++; put(col++, title, [], false); const a = col; pairs.forEach(([n, vals]) => put(col++, n, vals)); return [a, col - 1]; };
-  const blds = M.buildingsOf(S.sel.siteId), cats = M.list('categories').filter(c => M.itemsOf(c.id).length);
-  const rB = single('棟別', blds.map(b => b.name)), rT = single('檢查類型', M.list('inspect_types').map(t => t.name));
-  const rS = single('空間', M.list('spaces').map(x => x.name)), rC = single('工項', cats.map(c => c.name));
+  const zoned = xlZoned() && !S.noZones, zones = zoned ? M.list('zones') : [null];
+  const HEAD = (zoned ? ['區分'] : []).concat(IM_HEAD), C = h => '$' + L(HEAD.indexOf(h));
+  const zk = (z, n) => z ? `${z.name}|${n}` : n;   // 清單頁的分組標題：「專有戶|A棟」
+  const blds = M.buildingsOf(S.sel.siteId), bz = z => blds.filter(b => !z || M.bldZone(b) === z.id);
+  const catsZ = z => M.list('categories').filter(c => (!z || M.inZone(c, z.id)) && M.itemsOf(c.id, z && z.id).length);
+  const rZ = zoned ? single('區分', zones.map(z => z.name)) : null;
+  const rT = single('檢查類型', M.list('inspect_types').map(t => t.name));
   const rM = single('修繕方式', M.list('repair_methods').map(x => x.name)), rV = single('廠商', M.list('vendors').map(x => x.name));
-  const gF = group('樓層→', blds.map(b => [b.name, b.floors])), gU = group('戶別→', blds.map(b => [b.name, M.unitsOf(b.id).map(u => u.code)]));
-  const gI = group('缺失內容→', cats.map(c => [c.name, M.itemsOf(c.id).map(i => i.name)]));
+  const gB = group('棟別→', zones.map(z => [zk(z, '棟別'), bz(z).map(b => b.name)]));
+  const gT = group('檢查類型→', zones.map(z => [zk(z, '檢查類型'), M.typesOf(z && z.id).map(t => t.name)]));
+  const gS = group('空間→', zones.map(z => [zk(z, '空間'), M.list('spaces').filter(s => M.inZone(s, z && z.id)).map(s => s.name)]));
+  const gC = group('工項→', zones.map(z => [zk(z, '工項'), catsZ(z).map(c => c.name)]));
+  const gF = group('樓層→', zones.flatMap(z => bz(z).map(b => [zk(z, b.name), b.floors])));
+  const gU = group('戶別→', zones.flatMap(z => bz(z).map(b => [zk(z, b.name), M.unitsOf(b.id).map(u => u.code)])));
+  const gI = group('缺失內容→', zones.flatMap(z => catsZ(z).map(c => [zk(z, c.name), M.itemsOf(c.id, z && z.id).map(i => i.name)])));
   for (let c = 1; c <= col; c++) ls.getColumn(c).width = 16;
-  const dep = (key, [a, b]) => { const m = `MATCH($${key}2,'清單'!$${L(a)}$1:$${L(b)}$1,0)-1`; return `OFFSET('清單'!$${L(a)}$2,0,${m},COUNTA(OFFSET('清單'!$${L(a)}$2,0,${m},200,1)),1)`; };
-  const dv = { 棟別: rB, 樓層: dep('A', gF), 戶別: dep('A', gU), 檢查類型: rT, 空間: rS, 工項: rC, 缺失內容: dep('F', gI), 修繕方式: rM, 修繕廠商: rV, 責任廠商: rV };
-  ws.columns = IM_HEAD.map(h => ({ header: h, key: h, width: IM_WIDTH[h] || 12 }));
+  const zv = zoned ? `IF(${C('區分')}2="","${zones[0].name}",${C('區分')}2)` : '';   // 區分空白＝第一區
+  const key = h => zoned ? `${zv}&"|"&${C(h)}2` : `${C(h)}2`;
+  const dep = (k, [a, b]) => { const m = `MATCH(${k},'清單'!$${L(a)}$1:$${L(b)}$1,0)-1`; return `OFFSET('清單'!$${L(a)}$2,0,${m},MAX(1,COUNTA(OFFSET('清單'!$${L(a)}$2,0,${m},200,1))),1)`; };
+  const byZone = (title, g) => zoned ? dep(`${zv}&"|${title}"`, g) : `OFFSET('清單'!$${L(g[0])}$2,0,0,MAX(1,COUNTA('清單'!$${L(g[0])}$2:$${L(g[0])}$201)),1)`;
+  const dv = { 區分: rZ, 棟別: byZone('棟別', gB), 樓層: dep(key('棟別'), gF), 戶別: dep(key('棟別'), gU), 檢查類型: zoned ? byZone('檢查類型', gT) : rT,
+    空間: byZone('空間', gS), 工項: byZone('工項', gC), 缺失內容: dep(key('工項'), gI), 修繕方式: rM, 修繕廠商: rV, 責任廠商: rV };
+  ws.columns = HEAD.map(h => ({ header: h, key: h, width: IM_WIDTH[h] || 12 }));
   const hr = ws.getRow(1); hr.height = 30;
   hr.eachCell((c, i) => {
-    const need = IM_NEED.includes(IM_HEAD[i - 1]);
+    const need = IM_NEED.includes(HEAD[i - 1]);
     c.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 12 };
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: need ? 'FF1F3A5F' : 'FF3D5A80' } };
     c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
@@ -37,22 +51,24 @@ async function imTemplate() {
   const N = 500;
   for (let r = 2; r <= N; r++) {
     const row = ws.getRow(r);
-    IM_HEAD.forEach((h, i) => {
+    HEAD.forEach((h, i) => {
       const c = row.getCell(i + 1); c.protection = { locked: false };
       if (h === '缺失說明' || h === '對應備註') c.alignment = { wrapText: true, vertical: 'top' };
       if (dv[h]) c.dataValidation = { type: 'list', allowBlank: true, formulae: [dv[h]], showErrorMessage: true, errorTitle: '不在清單裡', error: '請用下拉選單選；清單沒有的項目，請先到系統後台新增。' };
     });
   }
   await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, formatColumns: true, formatRows: true, insertRows: true, deleteRows: true, sort: true, autoFilter: true });
-  const t = M.list('inspect_types')[0], b = blds[0], c = cats[0];
+  const z = zones[0], t = M.typesOf(z && z.id)[0], b = bz(z)[0], c = catsZ(z)[0];
+  const ex = { 區分: z && z.name, 棟別: b && b.name, 樓層: b && b.floors[0], 戶別: b && (M.unitsOf(b.id)[0] || {}).code, 檢查類型: t && t.name,
+    空間: (M.list('spaces').find(s => M.inZone(s, z && z.id)) || {}).name, 工項: c && c.name, 缺失內容: c && (M.itemsOf(c.id, z && z.id)[0] || {}).name,
+    缺失說明: '牆面細紋，需補土重漆', 照片: 'L-1.jpg、L-2.jpg', 報告編號: 'L-1' };
   [['怎麼填'], ['1. 一列一筆缺失。深藍色標題是必填：棟別、樓層、戶別、檢查類型、空間、工項、缺失內容。'],
-   ['2. 每格點右邊小箭頭用下拉選；樓層、戶別會跟著棟別，缺失內容會跟著工項。'],
+   [zoned ? '2. 每格點右邊小箭頭用下拉選。先選區分（專有戶／公設；空白＝' + zones[0].name + '），棟別、檢查類型、空間、工項只會出現這一區的；樓層、戶別跟著棟別，缺失內容跟著工項。' : '2. 每格點右邊小箭頭用下拉選；樓層、戶別會跟著棟別，缺失內容會跟著工項。'],
    ['3. 修繕廠商空白＝用工項的預設廠商；責任廠商空白＝同修繕廠商。'],
    ['4. 照片：把照片和這個 Excel 一起壓成 zip，「照片」欄寫檔名，多張用「、」分開。'],
    ['5. 標題列已鎖住（避免改到欄名讀不到）；下面的格子可以自由填、插入或刪除列。'],
    ['6. 清單是下載當下的系統設定；後台新增了項目，請重新下載範本。'], [],
-   ['範例（不要貼到「缺失匯入」頁；照著格式填即可）'], IM_HEAD,
-   [b && b.name, b && b.floors[0], b && (M.unitsOf(b.id)[0] || {}).code, t && t.name, (M.list('spaces')[0] || {}).name, c && c.name, c && (M.itemsOf(c.id)[0] || {}).name, '', '', '', '牆面細紋，需補土重漆', 'L-1.jpg、L-2.jpg', 'L-1', '']]
+   ['範例（不要貼到「缺失匯入」頁；照著格式填即可）'], HEAD, HEAD.map(h => ex[h] || '')]
     .forEach(r => help.addRow(r));
   help.getColumn(1).width = 12; help.getRow(1).font = { bold: true, size: 14 }; help.getRow(9).font = { bold: true };
   return wb;
@@ -85,16 +101,18 @@ async function imReadFile(f) {
 // 把一列文字對應到資料庫 id；對不到的欄位記在 bad
 function imResolve(r, photos) {
   const o = { src: r, bad: [], photoFiles: [], missingPhotos: [] };
-  const z0 = (M.list('zones')[0] || {}).id, bl = M.buildingsOf(S.sel.siteId);
-  const b = imFind(bl.filter(x => M.bldZone(x) === z0).concat(bl.filter(x => M.bldZone(x) !== z0)), r['棟別']);   // 同名時先找專有戶的
+  const zr = imFind(M.list('zones'), r['區分']), z0 = (zr || M.list('zones')[0] || {}).id, bl = M.buildingsOf(S.sel.siteId);
+  if (r['區分'] && !zr) o.bad.push('區分');
+  const b = imFind(bl.filter(x => M.bldZone(x) === z0).concat(bl.filter(x => M.bldZone(x) !== z0)), r['棟別']);   // 同名時先找「區分」那一區的（沒填＝專有戶）
   if (!b) o.bad.push('棟別'); o.building_id = b && b.id;
   o.floor = r['樓層'].toUpperCase();
   if (b && !b.floors.includes(o.floor)) o.bad.push('樓層');
   const u = b && imFind(M.unitsOf(b.id), r['戶別'], x => x.code);
   if (!u) o.bad.push('戶別'); o.unit_id = u && u.id;
-  const t = imFind(M.list('inspect_types'), r['檢查類型']); if (!t) o.bad.push('檢查類型'); o.inspect_type_id = t && t.id;
-  const sp = imFind(M.list('spaces'), r['空間']); o.space_id = sp ? sp.id : null;
-  const c = imFind(M.list('categories'), r['工項']); o.category_id = c ? c.id : null;
+  const zu = u ? M.unitZone(u) : z0, inZ = tb => { const all = M.list(tb); return all.filter(x => M.inZone(x, zu)).concat(all.filter(x => !M.inZone(x, zu))); };   // 先找這戶那一區的
+  const t = imFind(inZ('inspect_types'), r['檢查類型']); if (!t) o.bad.push('檢查類型'); o.inspect_type_id = t && t.id;
+  const sp = imFind(inZ('spaces'), r['空間']); o.space_id = sp ? sp.id : null;
+  const c = imFind(inZ('categories'), r['工項']); o.category_id = c ? c.id : null;
   const it = c && imFind(M.itemsOf(c.id, u ? M.unitZone(u) : null), r['缺失內容']); o.item_id = it ? it.id : null;
   const rm = imFind(M.list('repair_methods'), r['修繕方式']); o.repair_method_id = rm ? rm.id : null;
   const fv = imFind(M.list('vendors'), r['修繕廠商']) || (c && M.vendorsOfCat(c.id)[0]);
@@ -107,7 +125,7 @@ function imResolve(r, photos) {
   });
   o.flag = !!String(r['對應備註'] || '').trim();   // 有備註＝AI 不確定，整列都給下拉可改
   o.pick = { space: !sp || o.flag, cat: !c || o.flag, item: !it || o.flag };   // 對不到或有疑問的欄位，預覽時給下拉選
-  const UK = ['棟別', '樓層', '戶別'];
+  const UK = ['區分', '棟別', '樓層', '戶別'];
   o.pick.unit = o.flag || o.bad.some(k => UK.includes(k));   // 戶別對不到或 AI 改過，預覽時可重選棟／樓／戶
   if (o.pick.unit) { o.bad = o.bad.filter(k => !UK.includes(k)); if (!b) o.floor = null; else if (!b.floors.includes(o.floor)) o.floor = null; }
   o.on = !o.bad.length;
@@ -161,8 +179,8 @@ function imMountPreview(out, list, onDone) {
       if (o.pick.unit) { cu.appendChild(el('div', 'hint', '原文：' + `${r['棟別']} ${r['樓層']} ${r['戶別']}`)); cu.appendChild(unitSel(o)); cu.appendChild(document.createTextNode(r['檢查類型'] + (o.bad.length ? `\n⚠ 對不到：${o.bad.join('、')}` : ''))); }
       else cu.textContent = `${r['棟別']} ${r['樓層']} ${r['戶別']}\n${r['檢查類型']}` + (o.bad.length ? `\n⚠ 對不到：${o.bad.join('、')}` : '');
       tr.appendChild(cu);
-      const cs = el('td'); cs.appendChild(o.pick.space ? cellSel(o, 'space_id', M.list('spaces')) : document.createTextNode(M.name('spaces', o.space_id))); tr.appendChild(cs);
-      const cc = el('td'); cc.appendChild(o.pick.cat ? cellSel(o, 'category_id', M.list('categories')) : document.createTextNode(M.name('categories', o.category_id))); tr.appendChild(cc);
+      const cs = el('td'); cs.appendChild(o.pick.space ? cellSel(o, 'space_id', M.list('spaces').filter(x => M.inZone(x, o.unit_id ? M.unitZone(M.get('units', o.unit_id)) : null) || x.id === o.space_id)) : document.createTextNode(M.name('spaces', o.space_id))); tr.appendChild(cs);
+      const cc = el('td'); cc.appendChild(o.pick.cat ? cellSel(o, 'category_id', M.list('categories').filter(x => M.inZone(x, o.unit_id ? M.unitZone(M.get('units', o.unit_id)) : null) || x.id === o.category_id)) : document.createTextNode(M.name('categories', o.category_id))); tr.appendChild(cc);
       const ci = el('td'); ci.appendChild(!(o.pick.item || o.pick.cat) ? document.createTextNode(M.name('items', o.item_id)) : (o.category_id ? cellSel(o, 'item_id', M.itemsOf(o.category_id, o.unit_id ? M.unitZone(M.get('units', o.unit_id)) : null)) : el('span', 'hint', '先選工項'))); tr.appendChild(ci);
       [[cs, o.pick.space, '空間'], [cc, o.pick.cat, '工項'], [ci, o.pick.item || o.pick.cat, '缺失內容']].forEach(([td, p, k]) => { if (p) td.prepend(el('div', 'hint', '原文：' + (r[k] || '（空白）'))); });
       const cd = el('td', null, (o.description || '') + `\n照片 ${o.photoFiles.length} 張` + (o.missingPhotos.length ? `（找不到：${o.missingPhotos.join('、')}）` : '') + (r['對應備註'] ? `\n備註：${r['對應備註']}` : ''));

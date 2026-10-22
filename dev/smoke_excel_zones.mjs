@@ -81,6 +81,19 @@ const old = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(old, XLSX.utils.
 const p3 = '/tmp/claude-0/xl/zold.xlsx'; XLSX.writeFile(old, p3);
 await page.locator('#xl-file').setInputFiles(p3); await page.waitForSelector('#xl-go'); await page.click('#xl-go'); await page.waitForTimeout(800);
 ok((await page.evaluate(() => window.__db.T.units.find(u => u.code === 'A9').building_id)) === 1, '舊格式沒有區分欄：戶別掛到專有戶的 A棟');
+// 缺失匯入範本：有區分欄，同名 A棟 分兩區各自的樓層／戶別
+const [dt] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("下載匯入範本")').click()]);
+const tp = '/tmp/claude-0/xl/zim_tpl.xlsx'; await dt.saveAs(tp);
+const tw = XLSX.readFile(tp), th = XLSX.utils.sheet_to_json(tw.Sheets['清單'], { header: 1 });
+ok(XLSX.utils.sheet_to_json(tw.Sheets['缺失匯入'], { header: 1 })[0][0] === '區分', '缺失匯入範本第一欄是區分');
+const colOf = n => th[0].indexOf(n), vals = n => th.slice(1).map(r => r[colOf(n)]).filter(v => v != null);
+ok(vals('公設|A棟').includes('R1F') && !vals('專有戶|A棟').includes('R1F') && vals('專有戶|棟別').includes('A棟') && vals('公設|棟別').join().includes('A棟'), '範本清單：公設 A棟 有自己的樓層');
+ok(vals('公設|A棟').length && colOf('公設|A棟') !== colOf('專有戶|A棟') && th.slice(1).some(r => r[th[0].lastIndexOf('公設|A棟')] === '梯廳'), '範本清單：公設 A棟 的使用空間');
+const EX = createRequire('/tmp/claude-0/xl/')('exceljs'); const ew = new EX.Workbook(); await ew.xlsx.readFile(tp);
+ok(/MATCH\(IF\(\$A2="","專有戶",\$A2\)&"\|"&\$B2/.test(ew.getWorksheet('缺失匯入').getCell('C2').dataValidation.formulae[0]), '樓層下拉跟著區分＋棟別');
+const rs = await page.evaluate(() => [imResolve({ 區分: '公設', 棟別: 'A棟', 樓層: '1F', 戶別: '梯廳', 檢查類型: '', 空間: '', 工項: '', 缺失內容: '' }, new Map()).building_id,
+  imResolve({ 棟別: 'A棟', 樓層: '8F', 戶別: 'A1', 檢查類型: '', 空間: '', 工項: '', 缺失內容: '' }, new Map()).building_id]);
+ok(rs.join() === '9,1', '匯入：區分選公設對到公設 A棟，沒填算專有戶 ' + rs);
 ok(!errors.length, 'JS 錯誤：' + errors.join(' | '));
 console.log(results.join('\n'));
 await browser.close();

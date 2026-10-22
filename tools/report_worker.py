@@ -67,6 +67,17 @@ def lists_for(api, job):
     spaces = act(g('spaces'))
     try: us = g('unit_spaces', f'select=space_id&unit_id=eq.{job["unit_id"]}')
     except SystemExit: us = []
+    # 專有戶／公設：只列這一戶所在區的棟別、空間別、檢查類型、工項、缺失內容（缺失內容各區一份）
+    try: zones = sorted(g('zones'), key=lambda z: (z.get('sort') or 0, z['id']))
+    except SystemExit: zones = []
+    z0 = zones[0]['id'] if zones else None
+    bz = lambda b: b.get('zone_id') or z0
+    jb = next((b for b in blds if b['id'] == job.get('building_id')), None)
+    zid = bz(jb) if (jb and zones) else None
+    inz = lambda r: zid is None or not r.get('zone_ids') or zid in r['zone_ids']
+    blds = [b for b in blds if zid is None or bz(b) == zid]
+    spaces = [s for s in spaces if inz(s)]; cats = [c for c in cats if inz(c)]
+    items = [i for i in items if zid is None or (i['zone_id'] == zid if i.get('zone_id') is not None else inz(i))]
     sname = {s['id']: s['name'] for s in spaces}
     uniq = lambda xs: list(dict.fromkeys(xs))
     return {
@@ -77,7 +88,7 @@ def lists_for(api, job):
                   'vendors': [vname[r['vendor_id']] for r in cv if r['category_id'] == c['id'] and r['vendor_id'] in vname] or None} for c in cats],
         'vendors': [v['name'] for v in vendors],
         'methods': [m['name'] for m in act(g('repair_methods'))],
-        'types': [t['name'] for t in act(g('inspect_types'))],
+        'types': [t['name'] for t in act(g('inspect_types')) if inz(t)],
     }
 
 

@@ -46,8 +46,9 @@ const tp = '/tmp/claude-0/xl/im_tpl.xlsx'; await dl.saveAs(tp);
 ok(XLSX.utils.sheet_to_json(XLSX.readFile(tp).Sheets['缺失匯入'], { header: 1 })[0].join() === H.join(), '範本欄位');
 const EX = XL('exceljs'); const twb = new EX.Workbook(); await twb.xlsx.readFile(tp); const tws = twb.getWorksheet('缺失匯入');
 ok(tws.sheetProtection && tws.sheetProtection.sheet && (tws.getCell('A1').protection || {}).locked !== false && tws.getCell('A2').protection.locked === false, '標題列鎖住、資料格可填');
-ok(/^'清單'!/.test(tws.getCell('A2').dataValidation.formulae[0]) && /OFFSET/.test(tws.getCell('G5').dataValidation.formulae[0]), '每格有下拉（缺失內容跟著工項）');
-ok(twb.getWorksheet('清單').getCell('A2').value === 'A棟' && tws.getColumn(7).width >= 30, '清單取自系統設定、欄寬夠');
+ok(/'清單'!/.test(tws.getCell('A2').dataValidation.formulae[0]) && /OFFSET/.test(tws.getCell('G5').dataValidation.formulae[0]), '每格有下拉（缺失內容跟著工項）');
+const lsh = twb.getWorksheet('清單'), lc = lsh.getRow(1).values.indexOf('棟別');
+ok(lc > 0 && lsh.getCell(2, lc).value === 'A棟' && tws.getColumn(7).width >= 30, '清單取自系統設定、欄寬夠');
 
 await page.setInputFiles('#im-file', zp);
 await page.waitForSelector('#im-out table');
