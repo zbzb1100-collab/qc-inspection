@@ -454,6 +454,7 @@ function renderPlanAdmin(root) {
   const r1 = el('div', 'row'); r1.append(sb1, su); r1.querySelectorAll('select').forEach(s => { s.style.flex = '1'; s.style.minWidth = '120px'; });
   g.body.appendChild(r1);
   const unit = M.get('units', adminSel.plUnit);
+  if (adminSel.planErr) g.body.appendChild(el('div', 'banner err', adminSel.planErr + '。請把這段文字截圖給 Claude。'));
   if (unit) {
     const marksBox = el('div', 'stack');
     const bld = M.get('buildings', unit.building_id);
@@ -464,7 +465,12 @@ function renderPlanAdmin(root) {
       r.appendChild(el('b', null, title));
       r.appendChild(el('span', 'tag' + (p ? ' ok' : ''), p ? '已上傳' : '未上傳'));
       const lab = el('label', 'btn ghost small', p ? '更換圖' : '上傳圖'); const fi = el('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.style.display = 'none'; lab.appendChild(fi);
-      fi.onchange = () => guard(lab, async () => { const f = fi.files[0]; if (!f) return; await uploadPlan(unit, variant, f); await reloadAdmin(); toast('已上傳'); });
+      fi.onchange = () => guard(lab, async () => {
+        const f = fi.files[0]; if (!f) return; adminSel.planErr = null;
+        try { await uploadPlan(unit, variant, f); }
+        catch (e) { adminSel.planErr = `「${f.name}」上傳失敗：${errMsg(e)}（${e.statusCode || e.status || ''} ${e.error || ''}）`; renderAdmin(); throw e; }
+        await reloadAdmin(); toast('已上傳');
+      });
       r.appendChild(lab);
       if (p) { const mb = el('button', 'btn ghost small', '標記空間位置'); mb.onclick = () => { adminSel.markPlan = p.id; renderAdmin(); }; r.appendChild(mb); }
       parent.appendChild(r);
