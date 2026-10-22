@@ -40,8 +40,7 @@ await page.route('**/*', r => {
 await page.goto('file://' + root + 'index.html');
 await page.fill('#l-email', 'boss@x.com'); await page.fill('#l-pass', 'pw'); await page.click('#l-go');
 await page.waitForSelector('#app:not([hidden])');
-await page.click('#t-admin'); await page.waitForSelector('#admin-root details');
-await page.locator('summary:has-text("缺失批次匯入")').click();
+await page.click('#t-admin'); await page.waitForSelector('#adm-tabs'); await page.click('#adm-tabs button[data-tab=batch]');
 const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("下載匯入範本")').click()]);
 const tp = '/tmp/claude-0/xl/im_tpl.xlsx'; await dl.saveAs(tp);
 ok(XLSX.utils.sheet_to_json(XLSX.readFile(tp).Sheets['缺失匯入'], { header: 1 })[0].join() === H.join(), '範本欄位');

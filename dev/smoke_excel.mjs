@@ -26,8 +26,7 @@ await page.route('**/*', r => {
 await page.goto('file://' + root + 'index.html');
 await page.fill('#l-email', 'boss@x.com'); await page.fill('#l-pass', 'pw'); await page.click('#l-go');
 await page.waitForSelector('#app:not([hidden])');
-await page.click('#t-admin'); await page.waitForSelector('#admin-root details');
-await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('Excel')) d.open = true; }));
+await page.click('#t-admin'); await page.waitForSelector('#adm-tabs'); await page.click('#adm-tabs button[data-tab=batch]');
 
 // 匯出
 const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("匯出目前設定")').click()]);
@@ -89,8 +88,7 @@ ok(XLSX.utils.sheet_to_json(t.Sheets['戶別'], { header: 1 })[0].join() === '�
 
 // ---- 完整同步 ----
 await page.evaluate(() => { const T = window.__db.T; T.defects.push({ id: 1, site_id: 1, inspect_type_id: 1, building_id: 1, floor: '3F', unit_id: 1, category_id: 1, item_id: 1, status: 'todo' }); });
-await page.click('#t-pick'); await page.click('#t-admin'); await page.waitForSelector('#xl-file');
-await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('Excel')) d.open = true; }));
+await page.click('#t-pick'); await page.click('#t-admin'); await page.waitForSelector('#adm-tabs'); await page.click('#adm-tabs button[data-tab=batch]'); await page.waitForSelector('#xl-file');
 const [d3] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("匯出目前設定")').click()]);
 await d3.saveAs('/tmp/claude-0/xl/exp2.xlsx');
 const w3 = XLSX.readFile('/tmp/claude-0/xl/exp2.xlsx');
@@ -115,11 +113,11 @@ ok(db2.defects.length === 1, '缺失紀錄完全保留');
 
 // ---- 合併 ----
 await page.evaluate(() => { window.__db.T.defects.push({ id: 2, site_id: 1, inspect_type_id: 1, building_id: 1, floor: '3F', unit_id: 3, fix_vendor_id: 3, resp_vendor_id: 3, status: 'todo' }); });
-await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.trim() === '廠商') d.open = true; }));
-const vd = page.locator('#admin-root details:has(> summary:text-is("廠商"))');
-await vd.locator('button.chip:has-text("捷挺裝潢")').click();
-await vd.locator('select').selectOption({ label: '太隆興業' });
-await vd.locator('button:text-is("合併")').click(); await vd.locator('button:has-text("確定把")').click();
+await page.evaluate(() => reloadAdmin()); await page.click('#adm-tabs button[data-tab=vendor]');
+const vd = page.locator('#sec-vendor');
+await vd.locator('tr[data-name="捷挺裝潢"] button:text-is("更多")').click();
+await vd.locator('tr.more select').selectOption({ label: '太隆興業' });
+await vd.locator('button:text-is("合併")').click(); await vd.locator('button:has-text("確定併入")').click();
 await page.waitForTimeout(500);
 const db3 = await page.evaluate(() => window.__db.T);
 const d2r = db3.defects.find(d => d.id === 2);
@@ -129,17 +127,19 @@ ok(db3.category_vendors.some(m => m.category_id === 2 && m.vendor_id === 1), '�
 
 // ---- 每戶空間別 ----
 await page.evaluate(async () => { const T = window.__db.T; T.units.forEach(u => { u.active = true; }); if (!T.units.some(u => u.code === 'A2')) T.units.push({ id: 99, building_id: 1, code: 'A2', sort: 2, active: true }); await reloadAdmin(); });
-await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.trim().startsWith('戶別')) d.open = true; }));
-const ud = page.locator('#admin-root details:has(> summary:text-is("戶別"))');
-await ud.locator('button.chip:text-is("A1")').click();
-await ud.locator('label:has-text("有哪些空間") + .chips button.chip:has-text("前陽台")').click(); await page.waitForTimeout(300);
-await ud.locator('label:has-text("有哪些空間") + .chips button.chip:has-text("客餐廳")').click(); await page.waitForTimeout(300);
-ok((await page.evaluate(() => window.__db.T.unit_spaces.map(m => m.unit_id + ':' + m.space_id).sort().join())) === '1:2,1:3', '點選空間＝這戶有此空間');
+await page.click('#adm-tabs button[data-tab=space]');
+const ud = page.locator('#sec-unitspace');
+await ud.locator('.bld-pick .chip:text-is("A棟")').click(); await page.waitForTimeout(200);
+ok(await ud.locator('input[title="A1 全室"]').isChecked(), '還沒設定的戶，表格先照全部顯示');
+for (const t of await ud.locator('input[title^="A1 "]').evaluateAll(xs => xs.map(x => x.title))) {
+  const want = t === 'A1 客餐廳' || t === 'A1 前陽台';
+  if ((await ud.locator(`input[title="${t}"]`).isChecked()) !== want) { await ud.locator(`input[title="${t}"]`).click(); await page.waitForTimeout(300); }
+}
+ok((await page.evaluate(() => window.__db.T.unit_spaces.map(m => m.unit_id + ':' + m.space_id).sort().join())) === '1:2,1:3', '勾選表：這戶只勾客餐廳、前陽台');
 ok((await page.evaluate(() => M.spacesFor(1, '3F').map(s => s.name).join())) === '客餐廳,前陽台', '填寫只出現這戶勾選的空間');
 ok((await page.evaluate(() => M.spacesFor(99, '3F').length)) === await page.evaluate(() => M.list('spaces').length), '沒設定的戶顯示全部空間');
-await ud.locator('select').first().selectOption({ label: 'A1（2 個空間）' }).catch(() => {});
-await ud.locator('button:has-text("套用到同棟全部戶別")').click(); await ud.locator('button:has-text("確定覆蓋")').click(); await page.waitForTimeout(400);
-ok((await page.evaluate(() => window.__db.T.unit_spaces.filter(m => m.unit_id === 99).length)) === 2, '套用到同棟全部戶別');
+await ud.locator('button.colbtn:text-is("全室")').click(); await page.waitForTimeout(400);
+ok((await page.evaluate(() => { const T = window.__db.T, id = T.spaces.find(s => s.name === '全室').id; return [1, 99].every(u => T.unit_spaces.some(m => m.unit_id === u && m.space_id === id)); })), '按欄位名稱整欄勾選');
 
 // ---- 含照片匯出 ----
 await page.evaluate(() => { const T = window.__db.T; T.defect_photos.push({ id: 1, defect_id: 1, kind: 'before', path: 'a.jpg' }, { id: 2, defect_id: 1, kind: 'after', path: 'b.jpg' }, { id: 3, defect_id: 2, kind: 'before', path: 'c.jpg' }); });

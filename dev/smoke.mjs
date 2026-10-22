@@ -50,8 +50,8 @@ ok(await page.locator('#plan').isHidden(), '沒有平面圖時不顯示圖區');
 ok((await page.textContent('#plannote')).includes('還沒有平面圖'), '提示尚無平面圖');
 
 // ---- 管理：上傳平面圖（批次檔名）----
-await page.click('#t-admin'); await page.waitForSelector('#admin-root details');
-await page.locator('summary:has-text("平面圖")').click();
+await page.click('#t-admin'); await page.waitForSelector('#adm-tabs');
+await page.click('#adm-tabs button[data-tab=plan]');
 await page.locator('#admin-root input[type=file][multiple]').first().setInputFiles([
   { name: 'A1.png', mimeType: 'image/png', buffer: png() }, { name: 'A1-2F.png', mimeType: 'image/png', buffer: png() },
   { name: 'ZZ9.png', mimeType: 'image/png', buffer: png() }, { name: 'readme.txt', mimeType: 'text/plain', buffer: Buffer.from('x') }]);
@@ -60,7 +60,7 @@ const plans = await page.evaluate(() => window.__db.T.plans.map(p => p.unit_id +
 ok(plans.sort().join() === '1:2F,1:標準層', '批次匯入依檔名對到 A1 標準層與 2F，其餘略過：' + plans);
 // 空間標記
 await page.locator('button:has-text("標記空間位置")').first().click(); await page.waitForSelector('.plan .mark, #admin-root .plan');
-await page.locator('details:has(summary:has-text("平面圖")) .chip:has-text("客餐廳")').click();
+await page.locator('#admin-root .chip:has-text("客餐廳")').click();
 await page.waitForFunction(() => { const i = document.querySelector('#admin-root .plan img'); return i && i.naturalWidth > 0 && i.getBoundingClientRect().height > 20; });
 const box = await page.locator('#admin-root .plan img').boundingBox();
 await page.locator('#admin-root .plan img').click({ position: { x: box.width * 0.25, y: box.height * 0.5 } });
@@ -166,37 +166,36 @@ ok((await page.textContent('#st-all')) === '2', '責任廠商篩選');
 await page.click('#f-export'); await page.waitForTimeout(300);
 ok(!!(await page.evaluate(() => window.__xlsx)) && (await page.evaluate(() => window.__xlsx.n)).endsWith('.xlsx'), '匯出 Excel 被呼叫');
 
-// ---- 管理：清單 ----
-await page.click('#t-admin');
-await page.locator("summary", { hasText: /^廠商$/ }).click();
-await page.locator('details:has(summary:text-is("廠商")) .inline-add input').last().fill('新廠商、第二廠商');
-await page.locator('details:has(summary:text-is("廠商")) .inline-add button:has-text("新增")').click(); await page.waitForTimeout(300);
+// ---- 管理：清單（分頁＋表格）----
+await page.click('#t-admin'); await page.click('#adm-tabs button[data-tab=vendor]');
+await page.locator('#sec-vendor .lt-add input').fill('新廠商、第二廠商');
+await page.locator('#sec-vendor .lt-add button').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.vendors.length)) === 5, '一次新增多個廠商');
-await page.locator('details:has(summary:text-is("廠商")) .chip:text-is("第二廠商")').click();
-await page.locator('details:has(summary:text-is("廠商")) button:has-text("刪除")').click();
-await page.locator('details:has(summary:text-is("廠商")) button:has-text("確定刪除")').click(); await page.waitForTimeout(300);
+await page.locator('#sec-vendor tr[data-name="第二廠商"] button:text-is("更多")').click();
+await page.locator('#sec-vendor button:has-text("刪除「第二廠商」")').click();
+await page.locator('#sec-vendor button:has-text("再按一次確定刪除")').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.vendors.length)) === 4, '刪除需按兩次確認，刪掉未使用的廠商');
-await page.locator('details:has(summary:text-is("廠商")) .chip:text-is("新廠商")').click();
-await page.locator('details:has(summary:text-is("廠商")) .inline-add input[type=text]').first().fill('新廠商改名');
-await page.locator('details:has(summary:text-is("廠商")) button:has-text("儲存")').click(); await page.waitForTimeout(300);
-ok((await page.evaluate(() => window.__db.T.vendors.some(v => v.name === '新廠商改名'))), '改名');
+await page.locator('#sec-vendor tr[data-name="新廠商"] td.nm input').fill('新廠商改名');
+await page.locator('#sec-vendor tr[data-name="新廠商"] td.nm input').press('Enter'); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.vendors.some(v => v.name === '新廠商改名'))), '表格裡直接改名');
 // 工項：把新廠商掛到油漆
-await page.locator('summary:has-text("工項、缺失內容")').click();
-await page.locator('details:has(summary:has-text("工項、缺失內容")) .chip:text-is("10油漆")').click();
-await page.locator('details:has(summary:has-text("工項、缺失內容")) .chips button.chip:text-is("新廠商改名")').click(); await page.waitForTimeout(300);
+await page.click('#adm-tabs button[data-tab=cat]');
+await page.locator('#sec-cat tr[data-name="10油漆"] button:has-text("缺失內容")').click();
+await page.locator('#sec-cat .chips button.chip:text-is("新廠商改名")').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.category_vendors.filter(x => x.category_id === 2).length)) === 2, '工項可加掛第二家預設廠商');
-// 排序：把前陽台排序改 -1，填寫頁應排第一
-await page.evaluate(() => { document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('空間別') || d.querySelector('summary').textContent.trim().startsWith('戶別')) d.open = true; }); });
-await page.locator('details:has(> summary:has-text("編輯空間別總清單")) .chip:has-text("前陽台")').click();
-await page.locator('details:has(> summary:has-text("編輯空間別總清單")) input[type=number]').first().fill('-1');
-await page.locator('details:has(> summary:has-text("編輯空間別總清單")) button:has-text("儲存")').first().click(); await page.waitForTimeout(300);
-ok((await page.evaluate(() => window.__db.T.spaces.find(s => s.name === '前陽台').sort)) === -1, '排序數字可改');
-// 樓層
-await page.evaluate(() => { document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('棟別與樓層')) d.open = true; }); });
-await page.locator('details:has(summary:has-text("棟別與樓層")) .chip:text-is("A棟")').click();
-await page.locator('details:has(summary:has-text("棟別與樓層")) input[type=text]').nth(2).fill('2F、3F、4F、5F');
-await page.locator('details:has(summary:has-text("棟別與樓層")) button:has-text("儲存樓層")').click(); await page.waitForTimeout(300);
-ok((await page.evaluate(() => window.__db.T.buildings[0].floors.join())) === '2F,3F,4F,5F', '樓層可改');
+ok((await page.locator('#sec-cat tr[data-name="10油漆"]').textContent()).includes('新廠商改名'), '工項列直接看得到預設廠商');
+// 排序：前陽台按兩次 ↑ 排到第一
+await page.click('#adm-tabs button[data-tab=space]');
+await page.locator('#sec-space tr[data-name="前陽台"] button[title="往前移"]').click(); await page.waitForTimeout(300);
+await page.locator('#sec-space tr[data-name="前陽台"] button[title="往前移"]').click(); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.spaces.slice().sort((a, b) => a.sort - b.sort)[0].name)) === '前陽台', '↑↓ 排序，不用填數字');
+// 樓層：可寫範圍
+await page.click('#adm-tabs button[data-tab=struct]');
+ok((await page.locator('#sec-bld tr[data-name="A棟"] .fl-cell input').inputValue()) === '2F、3F、8F', '樓層顯示');
+await page.locator('#sec-bld tr[data-name="A棟"] .fl-cell input').fill('2F~5F');
+await page.locator('#sec-bld tr[data-name="A棟"] .fl-cell input').press('Enter'); await page.waitForTimeout(300);
+ok((await page.evaluate(() => window.__db.T.buildings[0].floors.join())) === '2F,3F,4F,5F', '樓層可改（範圍自動展開）');
+ok((await page.locator('#sec-bld tr[data-name="A棟"] .fl-cell input').inputValue()) === '2F~5F', '連續樓層縮成範圍顯示');
 // 停用廠商後填寫不再出現
 await page.click('#t-pick'); await page.waitForTimeout(200);
 

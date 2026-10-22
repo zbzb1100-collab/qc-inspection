@@ -1,361 +1,382 @@
-/* 管理：所有清單、平面圖、帳號都在這裡自己改（只有管理者看得到） */
+/* 管理：所有清單、平面圖、帳號都在這裡自己改（只有管理者看得到）
+   上面分頁，一頁只做一件事；清單都是表格：名稱直接點來改，右邊是排序、停用、更多（合併、刪除） */
 const adminSel = {};              // 各編輯器目前選到的項目
-const adminOpen = new Set(['bld']);
+const adminOpen = new Set();
 const adminShowOff = new Set();      // 哪些清單目前展開顯示「已停用」的項目
+let adminTab = 'struct';
 const splitNames = s => s.split(/[,，、\n]+/).map(x => x.trim()).filter(Boolean);
 const nextSort = rows => rows.reduce((m, r) => Math.max(m, r.sort ?? 0), 0) + 1;
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
+async function reloadAdmin() { await loadMaster(); renderAdmin(); }
+async function adminSave(fn, revert, msg = '已儲存') {   // 表格裡的勾選、改名：存檔後重畫；失敗就還原並顯示原因
+  try { await fn(); await reloadAdmin(); if (msg) toast(msg); }
+  catch (e) { if (revert) revert(); toast(errMsg(e)); }
+}
 async function setUnitSpaces(unitIds, spaceIds) {      // 把這些戶的空間別整組換成 spaceIds
   await q(sb.from('unit_spaces').delete().in('unit_id', unitIds));
   const rows = []; unitIds.forEach(u => spaceIds.forEach(sp => rows.push({ unit_id: u, space_id: sp })));
   for (let i = 0; i < rows.length; i += 500) await q(sb.from('unit_spaces').insert(rows.slice(i, i + 500)));
 }
-function unitSpacesEditor(body, u) {
-  const box = el('div', 'stack'); body.appendChild(box);
-  if (S.noUnitSpaces) { box.appendChild(el('div', 'banner', '還沒建立「每戶空間別」資料表：請到 Supabase SQL Editor 執行 3_戶別空間.sql 一次，這裡才能使用。')); return; }
-  const mine = () => S.m.unit_spaces.filter(m => m.unit_id === u.id).map(m => m.space_id);
-  box.appendChild(el('label', 'f', `${u.code} 有哪些空間（點選＝有；全部不選＝填寫時顯示全部）`));
-  const cs = el('div', 'chips'); box.appendChild(cs);
-  const have = new Set(mine()), uz = M.unitZone(u);
-  M.list('spaces').filter(sp => M.inZone(sp, uz) || have.has(sp.id)).forEach(sp => {
-    const b = el('button', 'chip' + (have.has(sp.id) ? ' on' : ''), (sp.code && sp.code !== '0' ? sp.code + ' ' : '') + sp.name); b.type = 'button';
-    b.onclick = () => guard(b, async () => {
-      if (have.has(sp.id)) await q(sb.from('unit_spaces').delete().eq('unit_id', u.id).eq('space_id', sp.id));
-      else await q(sb.from('unit_spaces').insert({ unit_id: u.id, space_id: sp.id }));
-      await reloadAdmin();
-    });
-    cs.appendChild(b);
-  });
-  const sibs = S.m.units.filter(x => x.building_id === u.building_id && x.id !== u.id).sort(bySort);
-  const row = el('div', 'inline-add'); const sel = el('select'); fillSelect(sel, sibs, null, '複製其他戶的空間設定…', x => `${x.code}（${S.m.unit_spaces.filter(m => m.unit_id === x.id).length} 個空間）`);
-  const cp = el('button', 'btn ghost small', '複製到這戶'); cp.onclick = () => guard(cp, async () => {
-    if (!sel.value) throw new Error('先選要複製哪一戶');
-    await setUnitSpaces([u.id], S.m.unit_spaces.filter(m => m.unit_id === Number(sel.value)).map(m => m.space_id)); await reloadAdmin(); toast('已複製');
-  });
-  row.append(sel, cp); box.appendChild(row);
-  const all = el('button', 'btn ghost small', '把這戶的設定套用到同棟全部戶別'); all.onclick = () => {
-    if (!all.dataset.arm) { all.dataset.arm = '1'; all.textContent = `確定覆蓋同棟其他 ${sibs.length} 戶？`; setTimeout(() => { delete all.dataset.arm; all.textContent = '把這戶的設定套用到同棟全部戶別'; }, 5000); return; }
-    guard(all, async () => { await setUnitSpaces(sibs.map(x => x.id).concat(u.id), mine()); await reloadAdmin(); toast('已套用到同棟全部戶別'); });
-  };
-  box.appendChild(all);
+// 連續樓層縮成範圍給人看：2F、3F…19F → 2F~19F（存回去時 parseFloors 會再展開）
+function compressFloors(fl) {
+  const sp = f => { const m = String(f).match(/^(\D*)(\d+)(\D*)$/); return m && { p: m[1], n: Number(m[2]), s: m[3] }; };
+  const out = []; let i = 0;
+  while (i < fl.length) {
+    let j = i; const a = sp(fl[i]);
+    if (a) { let st = null; while (j + 1 < fl.length) { const b = sp(fl[j + 1]), c = sp(fl[j]); if (!b || b.p !== a.p || b.s !== a.s) break; const d = b.n - c.n; if (Math.abs(d) !== 1 || (st != null && d !== st)) break; st = d; j++; } }
+    if (j - i >= 2) out.push(fl[i] + '~' + fl[j]); else out.push(...fl.slice(i, j + 1));
+    i = j + 1;
+  }
+  return out.join('、');
 }
-// 這戶（使用空間）出現在哪幾層：點選＝有；全部不選＝這棟每層都有
-function unitFloorsEditor(body, u) {
-  const b = M.get('buildings', u.building_id); if (!b) return;
-  if (S.noZones) return;
-  const wrap = el('div', 'stack unit-floors'); body.appendChild(wrap); body = wrap;
-  body.appendChild(el('label', 'f', (u.floors || []).length ? `${u.code} 在哪幾層（點選＝有）` : `${u.code} 在哪幾層：目前沒設定，每層都會出現，請點選它所在的樓層`));
-  const cs = el('div', 'chips'); body.appendChild(cs);
-  const have = new Set(u.floors || []); const bf = b.floors;
-  bf.forEach(f => {
-    const c = el('button', 'chip' + (have.has(f) ? ' on' : ''), f); c.type = 'button';
-    c.onclick = () => guard(c, async () => {
-      const fl = have.has(f) ? [...have].filter(x => x !== f) : bf.filter(x => have.has(x) || x === f);
-      await q(sb.from('units').update({ floors: fl }).eq('id', u.id)); await reloadAdmin();
-    });
-    cs.appendChild(c);
-  });
-}
-async function reloadAdmin() { await loadMaster(); renderAdmin(); }
+
+// ---------- 專有戶／公設 ----------
 const ZONE_SQL = '要先到 Supabase 執行 12_專有公設.sql';
-// 這一項屬於哪幾區（專有戶／公設）：點選＝屬於；全部不選＝每區都出現
-function zoneChips(body, table, r, title) {
-  const zones = M.list('zones'); if (!zones.length) return;
-  body.appendChild(el('label', 'f', title || `${r.name} 用在哪裡（可兩邊都選）`));
-  const cs = el('div', 'chips'); body.appendChild(cs);
-  const have = new Set(r.zone_ids || []);
-  zones.forEach(z => {
-    const b = el('button', 'chip' + (have.has(z.id) ? ' on' : ''), z.name); b.type = 'button';
-    b.onclick = () => guard(b, async () => {
-      const ids = have.has(z.id) ? [...have].filter(x => x !== z.id) : [...have, z.id];
-      await q(sb.from(table).update({ zone_ids: ids }).eq('id', r.id)); await reloadAdmin();
-    });
-    cs.appendChild(b);
-  });
-}
-// 後台上方點選的區分：下面的檢查類型、棟別、戶別、工項都只顯示這一區的，新增的也歸這一區
 const adminZone = () => { const zs = M.list('zones'); if (!zs.find(z => z.id === adminSel.zones)) adminSel.zones = zs[0] ? zs[0].id : null; return adminSel.zones; };
 const zoneNew = () => adminZone() ? { zone_ids: [adminZone()] } : {};
+// 「公設也用」這類勾選欄：r.zone_ids 空的＝每區都有
+function zoneCols(table, nameOf) {
+  const cur = adminZone(); if (!cur) return [];
+  return M.list('zones').filter(z => z.id !== cur).map(z => ({
+    head: `${z.name}也用`, cell: r => {
+      const ids = (r.zone_ids || []).length ? r.zone_ids : M.list('zones').map(x => x.id);
+      return checkCell(ids.includes(z.id), on => adminSave(() => q(sb.from(table).update({ zone_ids: on ? [...new Set([...ids, z.id])] : ids.filter(x => x !== z.id) }).eq('id', r.id))),
+        `${nameOf(r)} 也用在${z.name}`);
+    } }));
+}
+function checkCell(checked, onChange, title, cls) {
+  const c = el('input', cls); c.type = 'checkbox'; c.checked = checked; if (title) c.title = title;
+  c.onchange = () => onChange(c.checked, () => { c.checked = !c.checked; });
+  return c;
+}
 
-// 通用清單編輯器：點選 → 改名／排序／停用／刪除
-// o = { key, table, rows, label, onAdd, placeholder, nameField?('name'|'code'), sortable?(預設 true), onSelect? }
-function chipEditor(box, o) {
-  box.innerHTML = '';
-  const rows = o.rows; const selId = adminSel[o.key];
-  const selRow = rows.find(r => r.id === selId) || null;
-  const nameField = o.nameField || 'name'; const sortable = o.sortable !== false;
-  const cs = el('div', 'chips');
-  const offN = rows.filter(r => r.active === false).length; const showOff = adminShowOff.has(o.key);
-  rows.filter(r => showOff || r.active !== false || (selRow && selRow.id === r.id)).forEach(r => {
-    const b = el('button', 'chip' + (r.active === false ? ' off' : '') + (selRow && selRow.id === r.id ? ' sel' : ''), o.label(r));
-    b.type = 'button'; b.onclick = () => { adminSel[o.key] = r.id; if (o.onSelect) o.onSelect(r); chipEditor(box, o); };
-    cs.appendChild(b);
+// ---------- 通用表格清單 ----------
+// o = { key, table, rows, nameField?, nameHead?, placeholder, onAdd(names, addVals), sortable?, merge?, cols?:[{head, cell(r), vertical?}],
+//       detail?(r)→元素（點「展開」才出現在這列下面）, detailLabel?, more?(r, box)（「更多」裡多放的東西）, addFields?:[{placeholder, width}], hint? }
+function listTable(box, o) {
+  const nf = o.nameField || 'name', sortable = o.sortable !== false, cols = o.cols || [];
+  const offN = o.rows.filter(r => r.active === false).length, showOff = adminShowOff.has(o.key);
+  const rows = o.rows.filter(r => showOff || r.active !== false);
+  const wrap = el('div', 'lt-wrap'); const t = el('table', 'lt'); wrap.appendChild(t); box.appendChild(wrap);
+  const hr = el('tr'); hr.appendChild(el('th', 'nm', o.nameHead || '名稱（點一下就能改）'));
+  hr.appendChild(el('th', null, ''));
+  cols.forEach(c => { const th = el('th', c.vertical ? 'vt' : null); if (c.headEl) th.appendChild(c.headEl); else th.textContent = c.head; hr.appendChild(th); });
+  if (o.detail) hr.appendChild(el('th', null, ''));
+  const thead = el('thead'); thead.appendChild(hr); t.appendChild(thead);
+  const tb = el('tbody'); t.appendChild(tb);
+  const span = 2 + cols.length + (o.detail ? 1 : 0);
+  if (!rows.length) { const tr = el('tr'); const td = el('td', 'empty', '（還沒有項目，在下面新增）'); td.colSpan = span; tr.appendChild(td); tb.appendChild(tr); }
+  rows.forEach((r, i) => {
+    const tr = el('tr', r.active === false ? 'off' : null); tr.dataset.name = r[nf] ?? '';
+    const nm = el('td', 'nm'); const inp = el('input'); inp.type = 'text'; inp.value = r[nf] ?? ''; inp.title = '點一下就能改名，改完按 Enter';
+    inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
+    inp.onchange = () => adminSave(async () => { const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await q(sb.from(o.table).update({ [nf]: v }).eq('id', r.id)); },
+      () => { inp.value = r[nf] ?? ''; }, '已改名');
+    nm.appendChild(inp); if (r.active === false) nm.appendChild(el('span', 'tag', '已停用')); tr.appendChild(nm);
+    const tools = el('td', 'tools');
+    if (sortable) {
+      const up = el('button', 'ib', '↑'), dn = el('button', 'ib', '↓'); up.title = '往前移'; dn.title = '往後移'; up.disabled = i === 0; dn.disabled = i === rows.length - 1;
+      up.onclick = () => adminSave(() => moveRow(o.table, rows, i, -1), null, ''); dn.onclick = () => adminSave(() => moveRow(o.table, rows, i, 1), null, '');
+      tools.append(up, dn);
+    }
+    const tg = el('button', 'ib', r.active === false ? '啟用' : '停用'); tg.title = r.active === false ? '重新啟用' : '停用：填寫時不再出現，舊紀錄保留';
+    tg.onclick = () => adminSave(() => q(sb.from(o.table).update({ active: r.active === false }).eq('id', r.id)), null, r.active === false ? '已啟用' : '已停用');
+    const mo = el('button', 'ib', '更多'); mo.title = '合併、刪除';
+    const moreKey = 'more_' + o.key; mo.onclick = () => { adminSel[moreKey] = adminSel[moreKey] === r.id ? null : r.id; renderAdmin(); };
+    tools.append(tg, mo); tr.appendChild(tools);
+    cols.forEach(c => { const td = el('td', c.cls || null); const v = c.cell(r); if (v != null) td.append(v); tr.appendChild(td); });
+    if (o.detail) {
+      const td = el('td'); const open = adminSel['det_' + o.key] === r.id;
+      const b = el('button', 'ib' + (open ? ' on' : ''), (o.detailLabel ? o.detailLabel(r) : '展開') + (open ? ' ▴' : ' ▾'));
+      b.onclick = () => { adminSel['det_' + o.key] = open ? null : r.id; renderAdmin(); };
+      td.appendChild(b); tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+    if (adminSel[moreKey] === r.id) tb.appendChild(moreRow(o, r, span));
+    if (o.detail && adminSel['det_' + o.key] === r.id) {
+      const dr = el('tr', 'detail'); const td = el('td'); td.colSpan = span; td.appendChild(o.detail(r)); dr.appendChild(td); tb.appendChild(dr);
+    }
   });
-  if (!rows.length) cs.appendChild(el('span', 'hint', '（還沒有項目）'));
-  box.appendChild(cs);
   if (offN) {
-    const tgl = el('button', 'btn ghost small', showOff ? `收起已停用（${offN}）` : `顯示已停用（${offN}）`); tgl.type = 'button';
-    tgl.onclick = () => { showOff ? adminShowOff.delete(o.key) : adminShowOff.add(o.key); chipEditor(box, o); }; box.appendChild(tgl);
+    const tgl = el('button', 'btn ghost small', showOff ? `收起已停用的（${offN}）` : `顯示已停用的（${offN}）`); tgl.type = 'button';
+    tgl.onclick = () => { showOff ? adminShowOff.delete(o.key) : adminShowOff.add(o.key); renderAdmin(); }; box.appendChild(tgl);
   }
-  if (selRow) {
-    const ed = el('div', 'inline-add');
-    const inp = el('input'); inp.type = 'text'; inp.value = selRow[nameField] ?? ''; inp.title = '名稱'; ed.appendChild(inp);
-    let so = null;
-    if (sortable) { so = el('input'); so.type = 'number'; so.value = selRow.sort ?? 0; so.title = '排序'; so.placeholder = '排序'; so.style.flex = '0 0 72px'; ed.appendChild(so); }
-    const save = el('button', 'btn ghost small', '儲存'); save.onclick = () => guard(save, async () => {
-      const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白');
-      const patch = { [nameField]: v }; if (so) patch.sort = Number(so.value) || 0;
-      await q(sb.from(o.table).update(patch).eq('id', selRow.id)); await reloadAdmin(); toast('已更新');
-    });
-    const tg = el('button', 'btn ghost small', selRow.active === false ? '啟用' : '停用'); tg.onclick = () => guard(tg, async () => {
-      await q(sb.from(o.table).update({ active: selRow.active === false }).eq('id', selRow.id)); await reloadAdmin(); toast(selRow.active === false ? '已啟用' : '已停用');
-    });
-    const del = el('button', 'btn danger small', '刪除'); del.onclick = () => {
-      if (!del.dataset.arm) { del.dataset.arm = '1'; del.textContent = '確定刪除？'; setTimeout(() => { delete del.dataset.arm; del.textContent = '刪除'; }, 4000); return; }
-      guard(del, async () => {
-        const { error } = await sb.from(o.table).delete().eq('id', selRow.id);
-        if (error) {
-          if (error.code === '23503' || /foreign key|violates/i.test(error.message)) throw new Error('「' + o.label(selRow) + '」已有缺失紀錄或下層資料在使用，不能刪除；請改用「停用」。');
-          throw error;
-        }
-        adminSel[o.key] = null; await reloadAdmin(); toast('已刪除');
+  // 新增
+  const ad = el('div', 'lt-add'); const ai = el('input'); ai.type = 'text'; ai.placeholder = o.placeholder || '新增…（可用「、」一次輸入多個）'; ad.appendChild(ai);
+  const extra = (o.addFields || []).map(f => { const x = el('input'); x.type = 'text'; x.placeholder = f.placeholder; if (f.width) x.style.flex = `0 1 ${f.width}`; ad.appendChild(x); return x; });
+  const ab = el('button', 'btn small', '新增');
+  const doAdd = () => guard(ab, async () => {
+    const names = splitNames(ai.value); if (!names.length) throw new Error('請先輸入名稱');
+    const dup = names.filter(n => o.rows.some(r => String(r[nf] ?? '') === n));
+    if (dup.length) throw new Error('「' + dup.join('、') + '」已經有了' + (o.rows.some(r => r.active === false && dup.includes(String(r[nf]))) ? '（是停用的，按「顯示已停用的」再按啟用）' : '，不用重複新增'));
+    await o.onAdd(names, extra.map(x => x.value.trim())); await reloadAdmin(); toast(`已新增 ${names.length} 筆`);
+  });
+  ab.onclick = doAdd; ai.onkeydown = e => { if (e.key === 'Enter') doAdd(); };
+  ad.appendChild(ab); box.appendChild(ad);
+  if (o.hint) box.appendChild(el('p', 'hint', o.hint));
+}
+async function moveRow(table, rows, i, d) {        // 跟上一個／下一個對調，整串重新編號，不用自己填排序數字
+  const j = i + d; if (j < 0 || j >= rows.length) return;
+  const a = rows.slice(); [a[i], a[j]] = [a[j], a[i]];
+  await Promise.all(a.map((r, k) => r.sort === k + 1 ? null : q(sb.from(table).update({ sort: k + 1 }).eq('id', r.id))));
+}
+function moreRow(o, r, span) {
+  const nf = o.nameField || 'name', label = r[nf];
+  const tr = el('tr', 'more'); const td = el('td'); td.colSpan = span; tr.appendChild(td); const box = el('div', 'stack'); td.appendChild(box);
+  if (o.more) o.more(r, box);
+  if (o.merge) {                                    // 合併：A 和 B 其實是同一個，把 A 的紀錄全部改掛到 B，再刪掉 A
+    const others = o.rows.filter(x => x.id !== r.id);
+    const mr = el('div', 'inline-add'); const ms = el('select'); fillSelect(ms, others, null, `把「${label}」合併到…`, x => x[nf] + (x.active === false ? '（已停用）' : ''));
+    const mb = el('button', 'btn ghost small', '合併'); mb.onclick = () => {
+      if (!ms.value) { toast('先選要合併到哪一個'); return; }
+      const tgt = others.find(x => String(x.id) === ms.value);
+      if (!mb.dataset.arm) { mb.dataset.arm = '1'; mb.textContent = `確定併入「${tgt[nf]}」？`; setTimeout(() => { delete mb.dataset.arm; mb.textContent = '合併'; }, 5000); return; }
+      guard(mb, async () => {
+        for (const ref of o.merge.refs) await q(sb.from(ref[0]).update({ [ref[1]]: tgt.id }).eq(ref[1], r.id));
+        if (o.merge.extra) await o.merge.extra(r, tgt);
+        await q(sb.from(o.table).delete().eq('id', r.id));
+        adminSel['more_' + o.key] = null; await reloadAdmin(); toast(`已合併，「${label}」的紀錄都改成「${tgt[nf]}」`);
       });
     };
-    ed.append(save, tg, del); box.appendChild(ed);
-    if (o.merge) {                                    // 合併：A 和 B 其實是同一個，把 A 的紀錄全部改掛到 B，再刪掉 A
-      const others = rows.filter(r => r.id !== selRow.id);
-      const mr = el('div', 'inline-add'); const ms = el('select'); fillSelect(ms, others, null, '合併到…（選擇保留的那個）', r => o.label(r) + (r.active === false ? '（已停用）' : ''));
-      const mb = el('button', 'btn ghost small', '合併'); mb.onclick = () => {
-        if (!ms.value) { toast('先選要合併到哪一個'); return; }
-        const tgt = others.find(r => String(r.id) === ms.value);
-        if (!mb.dataset.arm) { mb.dataset.arm = '1'; mb.textContent = `確定把「${o.label(selRow)}」併入「${o.label(tgt)}」？`; setTimeout(() => { delete mb.dataset.arm; mb.textContent = '合併'; }, 5000); return; }
-        guard(mb, async () => {
-          for (const ref of o.merge.refs) await q(sb.from(ref[0]).update({ [ref[1]]: tgt.id }).eq(ref[1], selRow.id));
-          if (o.merge.extra) await o.merge.extra(selRow, tgt);
-          await q(sb.from(o.table).delete().eq('id', selRow.id));
-          adminSel[o.key] = tgt.id; await reloadAdmin(); toast(`已合併，「${o.label(selRow)}」的紀錄都改成「${o.label(tgt)}」`);
-        });
-      };
-      mr.append(ms, mb); box.appendChild(mr);
-      box.appendChild(el('p', 'hint', '合併：兩個其實是同一個時用。選中的這個會消失，它所有舊紀錄改掛到你選的那個。'));
-    }
-    box.appendChild(el('p', 'hint', (sortable ? '排序：數字小的排前面。' : '') + '停用＝填寫時不再出現但保留舊紀錄；刪除＝只有從未被使用的項目能刪。'));
+    mr.append(ms, mb); box.appendChild(mr);
+    box.appendChild(el('p', 'hint', '合併：兩個其實是同一個時用。這一個會消失，它所有舊紀錄改掛到你選的那個。'));
   }
-  const ad = el('div', 'inline-add'); const ai = el('input'); ai.type = 'text'; ai.placeholder = o.placeholder || '新增…（可用「、」一次輸入多個）'; ad.appendChild(ai);
-  const ab = el('button', 'btn small', '新增'); ab.onclick = () => guard(ab, async () => {
-    const names = splitNames(ai.value); if (!names.length) throw new Error('請先輸入名稱');
-    const dup = names.filter(n => rows.some(r => String(r[nameField] ?? '') === n));
-    if (dup.length) throw new Error('「' + dup.join('、') + '」已經有了' + (rows.some(r => r.active === false && dup.includes(String(r[nameField]))) ? '（在「已停用」裡，按「顯示已停用」再啟用）' : '，不用重複新增'));
-    await o.onAdd(names); await reloadAdmin(); toast(`已新增 ${names.length} 筆`);
-  });
-  ad.appendChild(ab); box.appendChild(ad);
+  const del = el('button', 'btn danger small', `刪除「${label}」`); del.onclick = () => {
+    if (!del.dataset.arm) { del.dataset.arm = '1'; del.textContent = '再按一次確定刪除'; setTimeout(() => { delete del.dataset.arm; del.textContent = `刪除「${label}」`; }, 4000); return; }
+    guard(del, async () => {
+      const { error } = await sb.from(o.table).delete().eq('id', r.id);
+      if (error) {
+        if (error.code === '23503' || /foreign key|violates/i.test(error.message)) throw new Error(`「${label}」已有缺失紀錄或下層資料在用，不能刪除；請改按「停用」。`);
+        throw error;
+      }
+      adminSel['more_' + o.key] = null; await reloadAdmin(); toast('已刪除');
+    });
+  };
+  const dr = el('div', 'row'); dr.append(del, el('span', 'hint', '只有從來沒用過的才能刪；用過的請按「停用」。')); box.appendChild(dr);
+  return tr;
 }
+
+// 區塊：標題＋「出現在填寫頁哪裡」一句話
+function section(root, title, where, id) {
+  const d = el('section', 'adm-sec'); if (id) d.id = id;
+  d.appendChild(el('h3', null, title)); if (where) d.appendChild(el('div', 'where', where));
+  const body = el('div', 'stack'); d.appendChild(body); root.appendChild(d); return body;
+}
+// 舊的折疊區塊（Excel、匯入、平面圖、帳號沿用）：現在每個分頁直接攤開
 function group(key, title, sub) {
-  const d = el('details', 'admin-group'); d.open = adminOpen.has(key);
-  d.addEventListener('toggle', () => { d.open ? adminOpen.add(key) : adminOpen.delete(key); });
-  const s = el('summary'); s.style.cursor = 'pointer'; s.style.fontWeight = '700'; s.textContent = title;
-  if (sub) s.appendChild(el('span', 'sub', '　' + sub));
-  d.appendChild(s);
-  const body = el('div', 'stack'); body.style.marginTop = '10px'; d.appendChild(body);
+  const d = el('section', 'adm-sec'); const h = el('h3', null, title); d.appendChild(h);
+  if (sub) d.appendChild(el('div', 'where', sub));
+  const body = el('div', 'stack'); d.appendChild(body);
   return { d, body };
 }
+// 選棟：一排大按鈕
+function bldPicker(body, key, blds) {
+  if (!blds.find(b => b.id === adminSel[key])) adminSel[key] = blds[0] && blds[0].id;
+  const cs = el('div', 'chips bld-pick');
+  blds.forEach(b => { const c = el('button', 'chip' + (b.id === adminSel[key] ? ' on' : ''), M.bldLabel(b, blds)); c.type = 'button'; c.onclick = () => { adminSel[key] = b.id; renderAdmin(); }; cs.appendChild(c); });
+  if (!blds.length) cs.appendChild(el('span', 'hint', '這一區還沒有棟別，請先到「選戶架構」新增。'));
+  body.appendChild(cs);
+  return M.get('buildings', adminSel[key]);
+}
 
-function simpleGroup(t, title, sub) {
-  const root = $('admin-root');
-  const g = group(t, title, sub); root.appendChild(g.d); const box = el('div', 'stack'); g.body.appendChild(box);
-  const it = t === 'inspect_types', zid = adminZone();
-  chipEditor(box, { key: t, table: t, onSelect: it && zid ? () => renderAdmin() : null, merge: t === 'repair_methods' ? { refs: [['defects', 'repair_method_id']] } : null,
-    rows: M.list(t, false).filter(r => !it || M.inZone(r, zid)), label: r => r.name,
-    onAdd: names => q(sb.from(t).insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m[t]) + i, ...(it ? zoneNew() : {}) })))),
-    placeholder: '新增' + title });
-  if (t === 'inspect_types') {   // 哪些檢查類型複驗合格後還要客戶簽認
-    const sb2 = el('div', 'stack'); sb2.appendChild(el('label', 'f', '複驗合格後還要「客戶簽認」才結案的檢查類型'));
-    const row = el('div', 'row'); row.style.gap = '14px';
-    M.list('inspect_types').filter(r => M.inZone(r, zid)).forEach(r => {
-      const lab = el('label', 'hint'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = !!r.need_sign;
-      ck.onchange = () => guard(ck, async () => {
-        const { error } = await sb.from('inspect_types').update({ need_sign: ck.checked }).eq('id', r.id);
-        if (error) { ck.checked = !ck.checked; throw (/need_sign/.test(error.message) ? new Error('要先到 Supabase 執行 7_待簽認.sql') : error); }
-        await reloadAdmin(); toast('已更新');
-      });
-      lab.append(ck, document.createTextNode(' ' + r.name)); row.appendChild(lab);
+// ================= 主畫面 =================
+const ADMIN_TABS = [['struct', '選戶架構'], ['space', '空間別'], ['cat', '工項與缺失'], ['vendor', '廠商'], ['plan', '平面圖'], ['user', '帳號'], ['batch', '批次匯入'], ['other', '其他']];
+function renderAdmin() {
+  const root = $('admin-root'); root.innerHTML = '';
+  const tabs = el('div', 'adm-tabs'); tabs.id = 'adm-tabs';
+  ADMIN_TABS.forEach(([k, n]) => { const b = el('button', adminTab === k ? 'on' : null, n); b.type = 'button'; b.dataset.tab = k; b.onclick = () => { adminTab = k; renderAdmin(); $('admin-root').closest('main')?.scrollTo(0, 0); }; tabs.appendChild(b); });
+  root.appendChild(tabs);
+  if (['struct', 'space', 'cat', 'plan'].includes(adminTab)) zoneBar(root);
+  ({ struct: tabStruct, space: tabSpace, cat: tabCat, vendor: tabVendor, plan: renderPlanAdmin, user: renderUserAdmin, other: tabOther,
+     batch: r => { renderExcelAdmin(r); renderImportAdmin(r); } })[adminTab](root);
+}
+function zoneBar(root) {
+  if (S.noZones) { root.appendChild(el('div', 'banner', '還沒分「專有戶／公設」：' + ZONE_SQL + ' 一次。')); return; }
+  const zs = M.list('zones'); if (zs.length < 2) return;
+  const zid = adminZone();
+  const bar = el('div', 'zone-bar'); bar.appendChild(el('span', 'lbl', '正在設定'));
+  const seg = el('div', 'seg'); seg.id = 'adm-zone';
+  zs.forEach(z => { const b = el('button', z.id === zid ? 'on' : null, z.name); b.type = 'button'; b.onclick = () => { adminSel.zones = z.id; renderAdmin(); }; seg.appendChild(b); });
+  bar.appendChild(seg); bar.appendChild(el('span', 'hint', `下面只顯示${M.name('zones', zid)}的項目，新增的也放在${M.name('zones', zid)}`));
+  root.appendChild(bar);
+}
+
+// ---------- 選戶架構：檢查類型 → 棟別、樓層 → 戶別 ----------
+function tabStruct(root) {
+  const siteId = S.sel.siteId, zid = adminZone(), ulab = zid ? M.unitLabel(zid) : '戶別';
+  root.appendChild(el('div', 'flow', `選戶畫面依序選：檢查類型 → 棟別 → 樓層 → ${ulab}。由上往下設定。`));
+
+  // 檢查類型
+  { const body = section(root, '檢查類型', '選戶畫面最上面的按鈕，例：交屋檢查、第三方驗收', 'sec-type');
+    const cols = [{ head: '複驗後要客戶簽認', cell: r => checkCell(!!r.need_sign, (on, back) => adminSave(async () => {
+      const { error } = await sb.from('inspect_types').update({ need_sign: on }).eq('id', r.id);
+      if (error) throw (/need_sign/.test(error.message) ? new Error('要先到 Supabase 執行 7_待簽認.sql') : error);
+    }, back), `${r.name} 複驗後要客戶簽認`) }, ...zoneCols('inspect_types', r => r.name)];
+    listTable(body, { key: 'inspect_types', table: 'inspect_types', rows: M.list('inspect_types', false).filter(r => M.inZone(r, zid)), cols,
+      onAdd: names => q(sb.from('inspect_types').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.inspect_types) + i, ...zoneNew() })))),
+      placeholder: '新增檢查類型' }); }
+
+  // 棟別與樓層
+  { const body = section(root, '棟別與樓層', '選戶畫面的「棟別」按鈕，選了棟才出現它的樓層', 'sec-bld');
+    const blds = M.list('buildings', false).filter(b => b.site_id === siteId && (!zid || M.bldZone(b) === zid));
+    const floorCell = b => {
+      const w = el('div', 'fl-cell'); const fi = el('input'); fi.type = 'text'; fi.value = compressFloors(b.floors); fi.placeholder = '例：B1F~B3F、1F~19F、RF';
+      fi.onkeydown = e => { if (e.key === 'Enter') fi.blur(); };
+      fi.onchange = () => adminSave(async () => {
+        const floors = parseFloors(fi.value); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開，請一層一層列出，例：R1F、R2F、PRF`);
+        if (!floors.length) throw new Error('至少要有一層');
+        await q(sb.from('buildings').update({ floors: [...new Set(floors)] }).eq('id', b.id));
+      }, () => { fi.value = compressFloors(b.floors); }, '樓層已更新');
+      w.append(fi, el('span', 'hint', `${b.floors.length} 層`)); return w;
+    };
+    const others = M.list('zones').filter(z => z.id !== zid);
+    listTable(body, { key: 'bld', table: 'buildings', rows: blds, cols: [{ head: '樓層（可寫範圍，用「、」分隔）', cell: floorCell, cls: 'wide' }],
+      more: others.length ? (b, box) => {
+        const r = el('div', 'row'); r.appendChild(el('span', 'hint', '這棟其實屬於：'));
+        others.forEach(z => { const mb = el('button', 'btn ghost small', `移到${z.name}`); mb.onclick = () => guard(mb, async () => { await q(sb.from('buildings').update({ zone_id: z.id }).eq('id', b.id)); adminSel.more_bld = null; await reloadAdmin(); toast(`已移到${z.name}`); }); r.appendChild(mb); });
+        box.appendChild(r); box.appendChild(el('p', 'hint', `兩區都需要「${b.name}」的話，到另一區再新增一個同名的棟，各自設樓層。`));
+      } : null,
+      addFields: [{ placeholder: '樓層，例：2F~19F', width: '200px' }],
+      onAdd: (names, [fl]) => { const floors = parseFloors(fl); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開`);
+        return q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [...floors], sort: nextSort(S.m.buildings) + i, ...(zid ? { zone_id: zid } : {}) })))); },
+      placeholder: '新增棟別，例：G棟' }); }
+
+  // 戶別／使用空間：一張表，列＝戶別，欄＝樓層，打勾＝這層有
+  { const body = section(root, ulab, `選了棟別、樓層之後出現的「${ulab}」按鈕；勾選它在哪幾層`, 'sec-unit');
+    const blds = M.list('buildings').filter(b => b.site_id === siteId && (!zid || M.bldZone(b) === zid));
+    const b = bldPicker(body, 'unitBld', blds);
+    if (b) {
+      const all = b.floors;
+      const eff = u => (u.floors || []).length ? all.filter(f => u.floors.includes(f)) : all;
+      const setFloors = (u, fl) => q(sb.from('units').update({ floors: fl.length === all.length ? [] : fl }).eq('id', u.id));
+      const cols = [{ head: '每層都有', cls: 'allcol', cell: u => {
+        const on = eff(u).length === all.length;
+        return checkCell(on, (v, back) => { if (!v) { back(); toast('取消「每層都有」：直接把不需要的樓層取消勾選'); return; } adminSave(() => setFloors(u, all), back); }, `${u.code} 每層都有`);
+      } }].concat(all.map(f => ({ head: f, cell: u => checkCell(eff(u).includes(f), (v, back) => {
+        const fl = all.filter(x => x === f ? v : eff(u).includes(x));
+        if (!fl.length) { back(); toast(`${u.code} 至少要在一層；不用了請按「停用」`); return; }
+        adminSave(() => setFloors(u, fl), back, '');
+      }, `${u.code} ${f}`) })));
+      listTable(body, { key: 'unit', table: 'units', nameField: 'code', nameHead: `${ulab}（點一下就能改名）`, rows: S.m.units.filter(u => u.building_id === b.id).sort(bySort), cols,
+        addFields: [{ placeholder: '在哪幾層（空白＝每層都有），例：1F', width: '240px' }],
+        onAdd: (names, [fl]) => { const floors = parseFloors(fl); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開`);
+          const bad = floors.filter(f => !all.includes(f)); if (bad.length) throw new Error(`${b.name} 沒有 ${bad.join('、')}，請先在上面「棟別與樓層」加上`);
+          return q(sb.from('units').insert(names.map((n, i) => ({ building_id: b.id, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === b.id)) + i, ...(floors.length && floors.length < all.length ? { floors: all.filter(f => floors.includes(f)) } : {}) })))); },
+        placeholder: zid ? `新增${ulab}，例：${ulab === '戶別' ? 'A9' : '藝術大廳'}` : '新增戶別，例：A9',
+        hint: '打勾＝這一層的選戶畫面會出現它。' });
+    } }
+}
+
+// ---------- 空間別 ----------
+function tabSpace(root) {
+  const zid = adminZone(), ulab = zid ? M.unitLabel(zid) : '戶別';
+  const allSp = S.m.spaces.slice().sort(bySort);
+  { const body = section(root, '空間別清單', '填寫缺失時第一排的「空間」按鈕，例：玄關、主臥、全室', 'sec-space');
+    const rows = allSp.filter(sp => M.inZone(sp, zid));
+    const typeId = (allSp[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;   // 舊欄位，資料庫還要求有值
+    const codeCell = sp => { const i = el('input', 'code-in'); i.type = 'text'; i.value = sp.code && sp.code !== '0' ? sp.code : ''; i.placeholder = '—'; i.title = '平面圖上顯示的代號（選填）';
+      i.onkeydown = e => { if (e.key === 'Enter') i.blur(); };
+      i.onchange = () => adminSave(() => q(sb.from('spaces').update({ code: i.value.trim() }).eq('id', sp.id)), () => { i.value = sp.code || ''; }); return i; };
+    listTable(body, { key: 'space', table: 'spaces', rows, cols: [{ head: '圖面代號', cell: codeCell }, ...(S.noSpaceZones ? [] : zoneCols('spaces', r => r.name))],
+      merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
+        const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
+        for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
+        await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
+        const have = new Set(S.m.unit_spaces.filter(m => m.space_id === b.id).map(m => m.unit_id));
+        for (const m of S.m.unit_spaces.filter(m => m.space_id === a.id && !have.has(m.unit_id))) await q(sb.from('unit_spaces').insert({ unit_id: m.unit_id, space_id: b.id }));
+      } },
+      onAdd: names => { const dup = names.filter(n => allSp.some(sp => sp.name === n)); if (dup.length) throw new Error('「' + dup.join('、') + '」另一區已經有了，請切到那一區，在它那一列勾「也用」');
+        return q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(allSp) + k, ...(zid && !S.noSpaceZones ? { zone_ids: [zid] } : {}) })))); },
+      placeholder: '新增空間別，例：玄關、主臥' }); }
+
+  // 每戶有哪些空間：列＝戶別，欄＝空間別
+  { const body = section(root, `每個${ulab}有哪些空間`, `打勾＝填寫這個${ulab}時會出現這個空間；按欄位名稱可整欄勾選／取消`, 'sec-unitspace');
+    if (S.noUnitSpaces) { body.appendChild(el('div', 'banner', '還沒建立「每戶空間別」資料表：請到 Supabase SQL Editor 執行 3_戶別空間.sql 一次。')); return; }
+    const blds = M.list('buildings').filter(b => b.site_id === S.sel.siteId && (!zid || M.bldZone(b) === zid));
+    const b = bldPicker(body, 'spBld', blds); if (!b) return;
+    const units = M.list('units').filter(u => u.building_id === b.id);
+    const sps = M.list('spaces').filter(sp => M.inZone(sp, zid));
+    const bound = u => S.m.unit_spaces.filter(m => m.unit_id === u.id).map(m => m.space_id);
+    const eff = u => { const b0 = bound(u); return new Set(b0.length ? b0 : M.spacesFor(u.id, null).map(s => s.id)); };
+    const wrap = el('div', 'lt-wrap'); const t = el('table', 'lt matrix'); wrap.appendChild(t);
+    const hr = el('tr'); hr.appendChild(el('th', 'nm', ulab));
+    sps.forEach(sp => { const th = el('th', 'vt'); const hb = el('button', 'colbtn', sp.name); hb.type = 'button'; hb.title = `整欄：${sp.name}`;
+      hb.onclick = () => { const on = !units.every(u => eff(u).has(sp.id)); adminSave(async () => { for (const u of units) { const s = eff(u); on ? s.add(sp.id) : s.delete(sp.id); await setUnitSpaces([u.id], [...s]); } }, null, on ? `全部勾上「${sp.name}」` : `全部取消「${sp.name}」`); };
+      th.appendChild(hb); hr.appendChild(th); });
+    const th = el('thead'); th.appendChild(hr); t.appendChild(th); const tb = el('tbody'); t.appendChild(tb);
+    units.forEach(u => {
+      const auto = !bound(u).length, s = eff(u); const tr = el('tr', auto ? 'auto' : null);
+      const nm = el('td', 'nm'); nm.appendChild(el('b', null, u.code)); if (auto) nm.appendChild(el('div', 'hint', '還沒設定，先照這樣顯示')); tr.appendChild(nm);
+      sps.forEach(sp => { const td = el('td'); td.appendChild(checkCell(s.has(sp.id), (v, back) => { const n = new Set(s); v ? n.add(sp.id) : n.delete(sp.id); adminSave(() => setUnitSpaces([u.id], [...n]), back, ''); }, `${u.code} ${sp.name}`)); tr.appendChild(td); });
+      tb.appendChild(tr);
     });
-    sb2.appendChild(row); g.body.appendChild(sb2);
-    const tz = M.get('inspect_types', adminSel.inspect_types);
-    if (tz && M.inZone(tz, zid)) zoneChips(g.body, 'inspect_types', tz, `${tz.name} 也要用在（可兩邊都選）`);
+    if (!units.length) { const tr = el('tr'); const td = el('td', 'empty', `這棟還沒有${ulab}`); td.colSpan = sps.length + 1; tr.appendChild(td); tb.appendChild(tr); }
+    body.appendChild(wrap);
+    if (units.some(u => !bound(u).length)) body.appendChild(el('p', 'hint', '淡色那幾列是還沒設定的：目前照平面圖標記（沒標記就是全部）顯示，勾一下就會變成正式設定。'));
   }
 }
 
-function renderAdmin() {
-  const root = $('admin-root'); root.innerHTML = '';
-  root.appendChild(el('div', 'banner', '清單都在這裡自己改，不用找廠商。新增或停用後，填寫頁馬上跟著變。'));
-  const siteId = S.sel.siteId; const zid = adminZone();
-  renderExcelAdmin(root);
-  renderImportAdmin(root);
-
-  // 順序跟選戶畫面一致：案場 → 檢查類型 → 棟別／樓層 → 戶別
-  simpleGroup('sites', '案場', '多個案場時，選戶畫面最上面的選單');
-  { const g = group('zones', '專有戶／公設', '選戶畫面第一層'); root.appendChild(g.d);
-    if (S.noZones) g.body.appendChild(el('div', 'banner', '還沒建立這一層：' + ZONE_SQL + ' 一次。'));
-    else {
-      const box = el('div', 'stack'); g.body.appendChild(box);
-      adminZone();
-      chipEditor(box, { key: 'zones', table: 'zones', onSelect: () => renderAdmin(), rows: M.list('zones', false), label: r => r.name,
-        onAdd: names => q(sb.from('zones').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.zones) + i })))), placeholder: '新增區分' });
-      const z = M.get('zones', adminSel.zones);
-      if (z) {
-        const row = el('div', 'inline-add'); const inp = el('input'); inp.type = 'text'; inp.value = z.unit_label || '戶別';
-        const sv = el('button', 'btn ghost small', '儲存'); sv.onclick = () => guard(sv, async () => {
-          const v = inp.value.trim(); if (!v) throw new Error('不能空白'); await q(sb.from('zones').update({ unit_label: v }).eq('id', z.id)); await reloadAdmin(); toast('已更新');
-        });
-        g.body.appendChild(el('label', 'f', `${z.name} 的第 5 層叫什麼（例：戶別、使用空間）`)); row.append(inp, sv); g.body.appendChild(row);
-      }
-      const zn = M.name('zones', adminZone());
-      g.body.appendChild(el('div', 'banner', `目前在設定「${zn}」：下面的檢查類型、棟別樓層、${M.unitLabel(adminZone())}、工項都只顯示${zn}的，新增的也會放在${zn}。`));
-    } }
-  simpleGroup('inspect_types', '檢查類型', '點一個可設定用在專有戶或公設');
-
-  // 1 棟別與樓層
-  { const g = group('bld', '棟別與樓層', '選戶畫面的棟別、樓層'); root.appendChild(g.d);
-    const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'bld', table: 'buildings', onSelect: () => renderAdmin(), rows: M.list('buildings', false).filter(b => b.site_id === siteId && (!zid || M.bldZone(b) === zid)), label: r => r.name,
-      onAdd: names => q(sb.from('buildings').insert(names.map((n, i) => ({ site_id: siteId, name: n, floors: [], sort: nextSort(S.m.buildings) + i, ...(zid ? { zone_id: zid } : {}) })))),
-      placeholder: '新增棟別，例：G棟' });
-    const b = M.get('buildings', adminSel.bld);
-    if (b) {
-      if (M.list('zones').length) {
-        const zr = el('div', 'stack'); zr.appendChild(el('label', 'f', `${b.name} 屬於（另一區也要 ${b.name} 的話，到那一區再新增一個同名的棟）`)); const zc = el('div', 'chips'); zr.appendChild(zc);
-        M.list('zones').forEach(z => {
-          const c = el('button', 'chip' + (M.bldZone(b) === z.id ? ' on' : ''), z.name); c.type = 'button';   // 一棟只屬一區；兩區都要的，另一區再建一個同名的棟
-          c.onclick = () => guard(c, async () => { await q(sb.from('buildings').update({ zone_id: z.id }).eq('id', b.id)); await reloadAdmin(); });
-          zc.appendChild(c);
-        });
-        if (M.list('zones').length > 1) g.body.appendChild(zr);
-      }
-      const fl = el('div', 'stack'); fl.appendChild(el('label', 'f', `${b.name} 的樓層（用「、」分隔，可寫範圍，例：B1F~B3F、2F~19F）`));
-      const fi = el('input'); fi.type = 'text'; fi.value = b.floors.join('、'); fl.appendChild(fi);
-      const sv = el('button', 'btn small', '儲存樓層'); sv.onclick = () => guard(sv, async () => {
-        const floors = parseFloors(fi.value); if (floors.bad.length) throw new Error(`「${floors.bad.join('、')}」沒辦法自動展開，請一層一層列出，例：R1F、R2F、PRF`);
-        await q(sb.from('buildings').update({ floors: [...floors] }).eq('id', b.id)); await reloadAdmin(); toast('樓層已更新');
+// ---------- 工項、缺失內容、預設廠商 ----------
+function tabCat(root) {
+  const zid = adminZone();
+  const body = section(root, '工項', '填寫缺失時的「工項」按鈕；按「缺失內容」可設定它底下的缺失與預設廠商', 'sec-cat');
+  const detail = c => {
+    const box = el('div', 'stack');
+    box.appendChild(el('label', 'f', `${c.name} 的缺失內容`));
+    listTable(box, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort),
+      onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i })))),
+      placeholder: '新增缺失內容（可用「、」一次輸入多個）' });
+    box.appendChild(el('label', 'f', `${c.name} 的預設廠商（點選＝加入／移除，可多家；填寫時變成「修繕廠商」按鈕）`));
+    const vb = el('div', 'chips'); box.appendChild(vb);
+    const mapped = new Set(S.m.category_vendors.filter(x => x.category_id === c.id).map(x => x.vendor_id));
+    M.list('vendors').forEach(v => {
+      const b = el('button', 'chip' + (mapped.has(v.id) ? ' on' : ''), v.name); b.type = 'button';
+      b.onclick = () => guard(b, async () => {
+        if (mapped.has(v.id)) await q(sb.from('category_vendors').delete().eq('category_id', c.id).eq('vendor_id', v.id));
+        else await q(sb.from('category_vendors').insert({ category_id: c.id, vendor_id: v.id, sort: nextSort(S.m.category_vendors.filter(x => x.category_id === c.id)) }));
+        await reloadAdmin();
       });
-      fl.appendChild(sv);
-      // 小工具：一次產生連續樓層，填進上面那格（按了還是要按「儲存樓層」）
-      const nums = b.floors.map(f => parseInt(f)).filter(n => !isNaN(n));
-      const gen = el('details'); const gs = el('summary', 'hint', '小工具：一次填入連續樓層'); gs.style.cursor = 'pointer'; gen.appendChild(gs);
-      const row = el('div', 'inline-add'); row.style.marginTop = '6px';
-      const a = el('input'); a.type = 'number'; a.value = nums.length ? Math.min(...nums) : 1; a.min = 1; const z = el('input'); z.type = 'number'; z.value = nums.length ? Math.max(...nums) : 1;
-      const gb = el('button', 'btn ghost small', '填入上面那格'); gb.type = 'button';
-      gb.onclick = () => { const lo = Number(a.value), hi = Number(z.value); const out = []; for (let i = lo; i <= hi; i++) out.push(i + 'F'); fi.value = out.join('、'); fi.focus(); };
-      row.append(a, el('span', 'hint', '～'), z, gb); gen.appendChild(row); fl.appendChild(gen);
-      g.body.appendChild(fl);
-    } }
+      vb.appendChild(b);
+    });
+    if (!M.list('vendors').length) vb.appendChild(el('span', 'hint', '還沒有廠商，請先到「廠商」分頁新增。'));
+    return box;
+  };
+  listTable(body, { key: 'cat', table: 'categories', rows: M.list('categories', false).filter(c => M.inZone(c, zid)), cols: [
+      { head: '預設廠商', cls: 'left', cell: c => el('span', 'hint', M.vendorsOfCat(c.id).map(v => v.name).join('、') || '—') }, ...zoneCols('categories', r => r.name)],
+    detail, detailLabel: c => `缺失內容 ${S.m.items.filter(i => i.category_id === c.id && i.active !== false).length}`,
+    onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew() })))),
+    placeholder: '新增工項，例：木地板工程' });
+}
 
-  // 2 戶別
-  { const g = group('unit', zid ? M.unitLabel(zid) : '戶別', zid ? '' : ''); root.appendChild(g.d);
-    const blds = M.list('buildings').filter(b => b.site_id === siteId && (!zid || M.bldZone(b) === zid));
-    if (!blds.find(b => b.id === adminSel.unitBld)) adminSel.unitBld = blds[0] && blds[0].id;
-    const sel = el('select'); fillSelect(sel, blds, adminSel.unitBld, null); sel.onchange = () => { adminSel.unitBld = Number(sel.value); adminSel.unit = null; renderAdmin(); };
-    g.body.appendChild(sel);
-    const ub = M.get('buildings', adminSel.unitBld), ulab = zid ? M.unitLabel(zid) : '戶別';
-    const uRows = S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort);
-    // 各層有哪些：一眼看出哪些沒設定樓層（每層都會出現）
-    if (ub && ub.floors.length > 1 && !S.noZones) {
-      const ov = el('div', 'stack'); ov.appendChild(el('label', 'f', `${ub.name} 各層有哪些${ulab}`));
-      ub.floors.forEach(f => {
-        const has = uRows.filter(u => u.active !== false && (u.floors || []).includes(f)).map(u => u.code);
-        if (has.length) ov.appendChild(el('div', 'hint', `${f}：${has.join('、')}`));
-      });
-      const all = uRows.filter(u => u.active !== false && !(u.floors || []).length).map(u => u.code);
-      if (all.length) ov.appendChild(el('div', 'banner', `沒設定樓層（${ub.floors.join('、')} 每層都會出現）：${all.join('、')}。點下面的名稱可設定它在哪幾層。`));
-      g.body.appendChild(ov);
-      // 新增時先選樓層
-      const nf = adminSel.newFloors = (adminSel.newFloors || []).filter(f => ub.floors.includes(f));
-      const pr = el('div', 'stack'); pr.appendChild(el('label', 'f', `新增的${ulab}放在哪幾層（先點樓層，再到下面輸入名稱按新增；都不點＝每層都有）`));
-      const pc = el('div', 'chips'); pr.appendChild(pc);
-      ub.floors.forEach(f => {
-        const c = el('button', 'chip' + (nf.includes(f) ? ' on' : ''), f); c.type = 'button';
-        c.onclick = () => { adminSel.newFloors = nf.includes(f) ? nf.filter(x => x !== f) : ub.floors.filter(x => nf.includes(x) || x === f); renderAdmin(); };
-        pc.appendChild(c);
-      });
-      g.body.appendChild(pr);
-    }
-    const box = el('div', 'stack unit-list'); g.body.appendChild(box);
-    chipEditor(box, { key: 'unit', table: 'units', nameField: 'code', onSelect: () => renderAdmin(), rows: S.m.units.filter(u => u.building_id === adminSel.unitBld).sort(bySort), label: r => r.code,
-      onAdd: names => q(sb.from('units').insert(names.map((n, i) => ({ building_id: adminSel.unitBld, code: n, sort: nextSort(S.m.units.filter(u => u.building_id === adminSel.unitBld)) + i, ...((adminSel.newFloors || []).length ? { floors: adminSel.newFloors } : {}) })))),
-      placeholder: zid ? `新增${M.unitLabel(zid)}` : '新增戶別，例：A9' });
-    const su = S.m.units.find(x => x.id === adminSel.unit); if (su) { unitFloorsEditor(g.body, su); unitSpacesEditor(g.body, su); }
-    // 空間別總清單（新增、改名、圖面代號、排序、停用、合併）收在戶別裡面
-    { const nd = el('details'); nd.open = adminOpen.has('space'); nd.addEventListener('toggle', () => { nd.open ? adminOpen.add('space') : adminOpen.delete('space'); });
-      const ns = el('summary', null, '編輯空間別總清單（新增、改名、圖面代號、排序、停用）'); ns.style.cssText = 'cursor:pointer;font-weight:700;margin-top:10px'; nd.appendChild(ns);
-      const nb = el('div', 'stack'); nb.style.marginTop = '8px'; nd.appendChild(nb); g.body.appendChild(nd);
-      const allSp = S.m.spaces.slice().sort(bySort), rows = allSp.filter(sp => M.inZone(sp, zid));   // 只列目前這一區（專有戶／公設）的
-      const typeId = (allSp[0] || {}).inspect_type_id || (M.list('inspect_types', false)[0] || {}).id;   // 舊欄位，資料庫還要求有值
-      const box2 = el('div', 'stack'); nb.appendChild(box2);
-      chipEditor(box2, { key: 'space', table: 'spaces', rows, onSelect: zid ? () => renderAdmin() : null, label: r => (r.code && r.code !== '0' ? r.code + ' ' : '') + r.name, merge: { refs: [['defects', 'space_id']], extra: async (a, b) => {
-          const marks = S.m.plan_spaces; const done = new Set(marks.filter(m => m.space_id === b.id).map(m => m.plan_id));
-          for (const m of marks.filter(m => m.space_id === a.id && !done.has(m.plan_id))) await q(sb.from('plan_spaces').update({ space_id: b.id }).eq('id', m.id));
-          await q(sb.from('plan_spaces').delete().eq('space_id', a.id));
-          const have = new Set(S.m.unit_spaces.filter(m => m.space_id === b.id).map(m => m.unit_id));
-          for (const m of S.m.unit_spaces.filter(m => m.space_id === a.id && !have.has(m.unit_id))) await q(sb.from('unit_spaces').insert({ unit_id: m.unit_id, space_id: b.id }));
-        } },
-        onAdd: names => { if (allSp.some(sp => names.includes(sp.name))) throw new Error('「' + names.filter(n => allSp.some(sp => sp.name === n)).join('、') + '」另一區已經有了，請到那一區點它，在「也要用在」加上這一區');
-          return q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(allSp) + k, ...(zid && !S.noSpaceZones ? { zone_ids: [zid] } : {}) })))); },
-        placeholder: '新增空間別，例：玄關' });
-      const ssp = M.get('spaces', adminSel.space);
-      if (ssp && rows.includes(ssp) && !S.noSpaceZones) zoneChips(nb, 'spaces', ssp, `${ssp.name} 也要用在（可兩邊都選）`); } }
-
-
-  // 4 工項與缺失內容與廠商對應
-  { const g = group('cat', '工項、缺失內容、預設廠商'); root.appendChild(g.d);
-    g.body.appendChild(el('label', 'f', '工項（點一個來編輯它的缺失內容與廠商）'));
-    const cbox = el('div', 'stack'); g.body.appendChild(cbox);
-    chipEditor(cbox, { key: 'cat', table: 'categories', onSelect: () => renderAdmin(), rows: M.list('categories', false).filter(c => M.inZone(c, zid)), label: r => r.name,
-      onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew() })))),
-      placeholder: '新增工項，例：20木地板' });
-    const c = M.get('categories', adminSel.cat);
-    if (c) {
-      zoneChips(g.body, 'categories', c, `${c.name} 也要用在（可兩邊都選）`);
-      g.body.appendChild(el('label', 'f', `${c.name} 的缺失內容`));
-      const ibox = el('div', 'stack'); g.body.appendChild(ibox);
-      chipEditor(ibox, { key: 'item', table: 'items', merge: { refs: [['defects', 'item_id']] }, rows: S.m.items.filter(i => i.category_id === c.id).sort(bySort), label: r => r.name,
-        onAdd: names => q(sb.from('items').insert(names.map((n, i) => ({ category_id: c.id, name: n, sort: nextSort(S.m.items.filter(x => x.category_id === c.id)) + i })))),
-        placeholder: '新增缺失內容' });
-      g.body.appendChild(el('label', 'f', `${c.name} 的預設廠商（點選＝加入／移除；可多家）`));
-      const vb = el('div', 'chips'); g.body.appendChild(vb);
-      const mapped = new Set(S.m.category_vendors.filter(x => x.category_id === c.id).map(x => x.vendor_id));
-      M.list('vendors').forEach(v => {
-        const b = el('button', 'chip' + (mapped.has(v.id) ? ' on' : ''), v.name); b.type = 'button';
-        b.onclick = () => guard(b, async () => {
-          if (mapped.has(v.id)) await q(sb.from('category_vendors').delete().eq('category_id', c.id).eq('vendor_id', v.id));
-          else await q(sb.from('category_vendors').insert({ category_id: c.id, vendor_id: v.id, sort: nextSort(S.m.category_vendors.filter(x => x.category_id === c.id)) }));
-          await reloadAdmin();
-        });
-        vb.appendChild(b);
-      });
-      if (!M.list('vendors').length) vb.appendChild(el('span', 'hint', '還沒有廠商，請先到下面「廠商」新增。'));
-      g.body.appendChild(el('p', 'hint', '預設廠商會變成填寫時「修繕廠商」的按鈕。'));
-    } }
-
-  // 5 廠商
-  { const g = group('vendor', '廠商'); root.appendChild(g.d); const box = el('div', 'stack'); g.body.appendChild(box);
-    chipEditor(box, { key: 'vendor', table: 'vendors', sortable: false,
+// ---------- 廠商、修繕方式 ----------
+function tabVendor(root) {
+  { const body = section(root, '廠商', '填寫時的「修繕廠商」「責任廠商」；請用全名', 'sec-vendor');
+    listTable(body, { key: 'vendor', table: 'vendors', sortable: false, cols: [{ head: '是哪些工項的預設廠商', cls: 'left', cell: v => el('span', 'hint',
+        S.m.category_vendors.filter(m => m.vendor_id === v.id).map(m => M.name('categories', m.category_id)).filter(Boolean).join('、') || '—') }],
       merge: { refs: [['defects', 'fix_vendor_id'], ['defects', 'resp_vendor_id']], extra: async (a, b) => {
         const have = new Set(S.m.category_vendors.filter(m => m.vendor_id === b.id).map(m => m.category_id));
         for (const m of S.m.category_vendors.filter(m => m.vendor_id === a.id && !have.has(m.category_id)))
           await q(sb.from('category_vendors').insert({ category_id: m.category_id, vendor_id: b.id, sort: m.sort }));
         await q(sb.from('category_vendors').delete().eq('vendor_id', a.id));
-      } }, rows: M.list('vendors', false), label: r => r.name,
+      } }, rows: M.list('vendors', false).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant')),
       onAdd: names => q(sb.from('vendors').insert(names.map(n => ({ name: n })))),
-      placeholder: '新增廠商全名' }); }
+      placeholder: '新增廠商全名', hint: '要指定某個工項預設哪家廠商，到「工項與缺失」分頁按該工項的「缺失內容」。' }); }
+  { const body = section(root, '修繕方式', '填寫時的「修繕方式」按鈕，例：修補、更換', 'sec-method');
+    listTable(body, { key: 'repair_methods', table: 'repair_methods', rows: M.list('repair_methods', false), merge: { refs: [['defects', 'repair_method_id']] },
+      onAdd: names => q(sb.from('repair_methods').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.repair_methods) + i })))), placeholder: '新增修繕方式' }); }
+}
 
-  // 6 修繕方式
-  simpleGroup('repair_methods', '修繕方式', '填寫時的「修繕方式」按鈕');
-
-  // 7 平面圖
-  renderPlanAdmin(root);
-
-  // 8 帳號
-  renderUserAdmin(root);
+// ---------- 其他：案場、專有戶／公設 ----------
+function tabOther(root) {
+  { const body = section(root, '案場', '有多個案場時，選戶畫面最上面的選單', 'sec-site');
+    listTable(body, { key: 'sites', table: 'sites', rows: M.list('sites', false),
+      onAdd: names => q(sb.from('sites').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.sites) + i })))), placeholder: '新增案場' }); }
+  { const body = section(root, '專有戶／公設', '選戶畫面選完案場後的第一排按鈕；右邊可改這一區的「戶別」叫什麼', 'sec-zone');
+    if (S.noZones) { body.appendChild(el('div', 'banner', '還沒建立這一層：' + ZONE_SQL + ' 一次。')); return; }
+    const labCell = z => { const i = el('input'); i.type = 'text'; i.value = z.unit_label || '戶別'; i.onkeydown = e => { if (e.key === 'Enter') i.blur(); };
+      i.onchange = () => adminSave(async () => { const v = i.value.trim(); if (!v) throw new Error('不能空白'); await q(sb.from('zones').update({ unit_label: v }).eq('id', z.id)); }, () => { i.value = z.unit_label; }); return i; };
+    listTable(body, { key: 'zones', table: 'zones', rows: M.list('zones', false), cols: [{ head: '這一區的戶別叫做', cell: labCell }],
+      onAdd: names => q(sb.from('zones').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.zones) + i })))), placeholder: '新增區分' }); }
 }
 
 // ================= 平面圖 =================
@@ -376,7 +397,7 @@ async function uploadPlan(unit, variant, file) {
   }
 }
 function renderPlanAdmin(root) {
-  const g = group('plan', '平面圖', '每戶一張，2F 另一張'); root.appendChild(g.d);
+  const g = group('plan', '平面圖', '填寫頁看到的圖。每戶一張共用圖，格局不同的樓層（例如 2F）可另外傳專屬圖'); root.appendChild(g.d);
   const nPlans = S.m.plans.length, nUnits = M.list('units', false).length;
   g.body.appendChild(el('div', 'hint', `目前已上傳 ${nPlans} 張（戶別共 ${nUnits} 戶）。`));
   // 批次匯入
@@ -400,9 +421,9 @@ function renderPlanAdmin(root) {
   };
   // 單戶管理
   g.body.appendChild(el('hr'));
-  const blds = M.list('buildings').filter(b => b.site_id === S.sel.siteId);
+  const zid = adminZone(); const blds = M.list('buildings').filter(b => b.site_id === S.sel.siteId && (!zid || M.bldZone(b) === zid));
   if (!blds.find(b => b.id === adminSel.plBld)) adminSel.plBld = blds[0] && blds[0].id;
-  const sb1 = el('select'); fillSelect(sb1, blds, adminSel.plBld, null); sb1.onchange = () => { adminSel.plBld = Number(sb1.value); adminSel.plUnit = null; renderAdmin(); };
+  const sb1 = el('select'); fillSelect(sb1, blds, adminSel.plBld, null, b => M.bldLabel(b, blds)); sb1.onchange = () => { adminSel.plBld = Number(sb1.value); adminSel.plUnit = null; renderAdmin(); };
   const units = M.unitsOf(adminSel.plBld);
   if (!units.find(u => u.id === adminSel.plUnit)) adminSel.plUnit = units[0] && units[0].id;
   const su = el('select'); fillSelect(su, units, adminSel.plUnit, null, u => {
@@ -444,8 +465,8 @@ function renderPlanAdmin(root) {
   }
 }
 async function renderMarkEditor(box, plan) {
-  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置，在圖上放該空間的標記（有圖面代號顯示代號，沒有顯示名稱）。這戶有哪些空間，請到「戶別」設定'));
-  const spaces = M.list('spaces').filter(s => s.name !== '全室');
+  box.appendChild(el('label', 'f', '點下面的空間，再到圖上點位置，在圖上放該空間的標記（有圖面代號顯示代號，沒有顯示名稱）。這戶有哪些空間，請到「空間別」分頁設定'));
+  const uz = M.unitZone(M.get('units', plan.unit_id)); const spaces = M.list('spaces').filter(s => s.name !== '全室' && M.inZone(s, uz));
   const chipsBox = el('div', 'chips'); box.appendChild(chipsBox);
   const wrap = el('div', 'plan'); const img = el('img'); img.alt = '平面圖'; wrap.appendChild(img); box.appendChild(wrap);
   const marks = S.m.plan_spaces.filter(m => m.plan_id === plan.id);
@@ -485,7 +506,7 @@ async function renderMarkEditor(box, plan) {
 
 // ================= 帳號 =================
 function renderUserAdmin(root) {
-  const g = group('user', '帳號', '角色、停用'); root.appendChild(g.d);
+  const g = group('user', '帳號', '誰能登入、是一般／管理者／廠商；離職的取消「啟用」'); root.appendChild(g.d);
   g.body.appendChild(el('div', 'banner', '新增帳號：到 Supabase 後台 Authentication → Users → Add user，建好後這裡就會出現，可改名字、設管理者、離職時停用。廠商帳號：角色選「廠商」並選是哪一家，他只會看到修繕廠商是自己的缺失，只能拍修繕後照片、按修繕完成。'));
   const list = el('div', 'sublist'); g.body.appendChild(list);
   S.m.profiles.slice().sort((a, b) => (a.created_at || '').localeCompare(b.created_at || '')).forEach(p => {

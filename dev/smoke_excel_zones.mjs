@@ -33,8 +33,7 @@ await page.route('**/*', r => {
 await page.goto('file://' + root + 'index.html');
 await page.fill('#l-email', 'boss@x.com'); await page.fill('#l-pass', 'pw'); await page.click('#l-go');
 await page.waitForSelector('#app:not([hidden])');
-await page.click('#t-admin'); await page.waitForSelector('#admin-root details');
-await page.evaluate(() => document.querySelectorAll('#admin-root details').forEach(d => { if (d.querySelector('summary').textContent.includes('Excel')) d.open = true; }));
+await page.click('#t-admin'); await page.waitForSelector('#adm-tabs'); await page.click('#adm-tabs button[data-tab=batch]');
 const [dl] = await Promise.all([page.waitForEvent('download'), page.locator('button:has-text("匯出目前設定")').click()]);
 const p1 = '/tmp/claude-0/xl/zexp.xlsx'; await dl.saveAs(p1);
 const wb = XLSX.readFile(p1);
