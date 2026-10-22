@@ -131,9 +131,11 @@ await page.click('#adm-tabs button[data-tab=space]');
 const ud = page.locator('#sec-unitspace');
 await ud.locator('.bld-pick .chip:text-is("A棟")').click(); await page.waitForTimeout(200);
 ok(await ud.locator('input[title="A1 全室"]').isChecked(), '還沒設定的戶，表格先照全部顯示');
+await ud.locator('input[title="A1 全室"]').click(); await page.waitForTimeout(300);
+ok(await ud.locator('input[title="A1 全室"]').isChecked() && (await page.evaluate(() => window.__db.T.unit_spaces.filter(m => m.unit_id === 1).length)) > 0, '點淡色的勾＝確認成正式設定（不是取消）');
 for (const t of await ud.locator('input[title^="A1 "]').evaluateAll(xs => xs.map(x => x.title))) {
   const want = t === 'A1 客餐廳' || t === 'A1 前陽台';
-  if ((await ud.locator(`input[title="${t}"]`).isChecked()) !== want) { await ud.locator(`input[title="${t}"]`).click(); await page.waitForTimeout(300); }
+  for (let k = 0; k < 2 && (await ud.locator(`input[title="${t}"]`).isChecked()) !== want; k++) { await ud.locator(`input[title="${t}"]`).click(); await page.waitForTimeout(300); }
 }
 ok((await page.evaluate(() => window.__db.T.unit_spaces.map(m => m.unit_id + ':' + m.space_id).sort().join())) === '1:2,1:3', '勾選表：這戶只勾客餐廳、前陽台');
 ok((await page.evaluate(() => M.spacesFor(1, '3F').map(s => s.name).join())) === '客餐廳,前陽台', '填寫只出現這戶勾選的空間');

@@ -307,12 +307,13 @@ function tabSpace(root) {
     units.forEach(u => {
       const auto = !bound(u).length, s = eff(u); const tr = el('tr', auto ? 'auto' : null);
       const nm = el('td', 'nm'); nm.appendChild(el('b', null, u.code)); if (auto) nm.appendChild(el('div', 'hint', '還沒設定，先照這樣顯示')); tr.appendChild(nm);
-      sps.forEach(sp => { const td = el('td'); td.appendChild(checkCell(s.has(sp.id), (v, back) => { const n = new Set(s); v ? n.add(sp.id) : n.delete(sp.id); if (!n.size) { back(); toast(`${u.code} 至少要留一個空間`); return; } adminSave(() => setUnitSpaces([u.id], [...n]), back, ''); }, `${u.code} ${sp.name}`)); tr.appendChild(td); });
+      sps.forEach(sp => { const td = el('td'); td.appendChild(checkCell(s.has(sp.id), (v, back) => { const n = new Set(s); if (auto && !v) { adminSave(() => setUnitSpaces([u.id], [...n]), null, `${u.code} 已確認，再點一次可取消`); return; }   // 淡色（還沒設定）的勾：第一次點是確認成正式設定，不是取消
+        v ? n.add(sp.id) : n.delete(sp.id); if (!n.size) { back(); toast(`${u.code} 至少要留一個空間`); return; } adminSave(() => setUnitSpaces([u.id], [...n]), back, ''); }, `${u.code} ${sp.name}`)); tr.appendChild(td); });
       tb.appendChild(tr);
     });
     if (!units.length) { const tr = el('tr'); const td = el('td', 'empty', `這棟還沒有${ulab}`); td.colSpan = sps.length + 1; tr.appendChild(td); tb.appendChild(tr); }
     body.appendChild(wrap);
-    if (units.some(u => !bound(u).length)) body.appendChild(el('p', 'hint', '淡色那幾列是還沒設定的：目前照平面圖標記（沒標記就是全部）顯示，勾一下就會變成正式設定。'));
+    if (units.some(u => !bound(u).length)) body.appendChild(el('p', 'hint', '淡色的勾是還沒設定、系統先照平面圖標記（沒標記就是全部）顯示的。點一下淡色的勾就變成正式設定（深色），再點一次才是取消。'));
   }
 }
 
