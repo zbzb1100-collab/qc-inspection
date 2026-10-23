@@ -535,7 +535,7 @@ async function renderMarkEditor(box, plan) {
 // ================= 帳號 =================
 function renderUserAdmin(root) {
   const g = group('user', '帳號', '誰能登入、是一般／管理者／廠商；離職的取消「啟用」'); root.appendChild(g.d);
-  g.body.appendChild(el('div', 'banner', '新增帳號：請同事在登入頁按「申請帳號」，填姓名、Email、密碼。申請的帳號會出現在最上面「待開通」，選好角色、勾「啟用」再按儲存就能登入。離職的取消「啟用」。廠商帳號：角色選「廠商」並選是哪一家，他只會看到修繕廠商是自己的缺失，只能拍修繕後照片、按修繕完成。'));
+  g.body.appendChild(el('div', 'banner', '新增帳號：請同事在登入頁按「申請帳號」，填姓名、Email、密碼。申請的帳號會出現在最上面「待開通」，選好角色、勾「啟用」再按儲存就能登入。離職的取消「啟用」。廠商帳號：角色選「廠商」並選是哪一家（同一批人用不同公司名接案，可以再加「其他公司名」），他只會看到修繕廠商是這幾家的缺失，只能拍修繕後照片、按修繕完成。'));
   const wait = S.m.profiles.filter(p => p.pending && !p.active);
   if (wait.length) g.body.appendChild(el('div', 'banner warn', `待開通 ${wait.length} 個：${wait.map(p => p.name || p.email).join('、')}。確認是自己人再開通；不認識的不要開。`));
   const list = el('div', 'sublist'); g.body.appendChild(list);
@@ -545,7 +545,22 @@ function renderUserAdmin(root) {
     const em = el('span', 'hint', (p.pending && !p.active ? '🆕 待開通　' : '') + (p.email || '')); em.style.width = '100%';
     const role = el('select'); [['user', '一般'], ['admin', '管理者'], ['vendor', '廠商']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; role.appendChild(o); }); role.value = p.role; role.style.width = 'auto';
     const ven = el('select'); fillSelect(ven, M.list('vendors'), p.vendor_id, '（選哪家廠商）'); ven.style.width = 'auto'; ven.hidden = p.role !== 'vendor';
-    role.onchange = () => { ven.hidden = role.value !== 'vendor'; };
+    // 同一批人用不同公司名接案：主要公司之外可以再加其他公司名（26_廠商帳號多家公司.sql）
+    const extra = new Set(S.m.user_vendors.filter(x => x.user_id === p.id).map(x => x.vendor_id));
+    const venBox = el('div', 'chips'); venBox.style.width = '100%'; venBox.style.alignItems = 'center';
+    const paintVen = () => {
+      venBox.innerHTML = ''; venBox.hidden = role.value !== 'vendor' || S.noUserVendors; if (venBox.hidden) return;
+      venBox.appendChild(el('span', 'hint', '其他公司名：'));
+      [...extra].filter(id => id !== Number(ven.value)).forEach(id => {
+        const c = el('button', 'chip on', M.name('vendors', id) + ' ×'); c.type = 'button'; c.title = '移除';
+        c.onclick = () => { extra.delete(id); paintVen(); }; venBox.appendChild(c);
+      });
+      const add = el('select'); add.style.width = 'auto';
+      fillSelect(add, M.list('vendors').filter(v => v.id !== Number(ven.value) && !extra.has(v.id)), null, '＋加另一個公司名');
+      add.onchange = () => { if (add.value) { extra.add(Number(add.value)); paintVen(); } }; venBox.appendChild(add);
+    };
+    role.onchange = () => { ven.hidden = role.value !== 'vendor'; paintVen(); };
+    ven.addEventListener('change', paintVen); paintVen();
     const lab = el('label', 'hint'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = p.active; lab.append(ck, document.createTextNode(' 啟用'));
     if (self) { role.disabled = true; ck.disabled = true; }
     // 可用案場（23_案場權限.sql）：管理者看得到全部；其他人只看得到勾選的
@@ -577,8 +592,16 @@ function renderUserAdmin(root) {
         if (add.length) await q(sb.from('user_sites').insert(add));
         if (del.length) await q(sb.from('user_sites').delete().eq('user_id', p.id).in('site_id', del));
       }
+      if (!S.noUserVendors) {
+        const want = new Set(role.value === 'vendor' ? [...extra].filter(id => id !== Number(ven.value)) : []);
+        const had = new Set(S.m.user_vendors.filter(x => x.user_id === p.id).map(x => x.vendor_id));
+        const add = [...want].filter(id => !had.has(id)).map(id => ({ user_id: p.id, vendor_id: id }));
+        const del = [...had].filter(id => !want.has(id));
+        if (add.length) await q(sb.from('user_vendors').insert(add));
+        if (del.length) await q(sb.from('user_vendors').delete().eq('user_id', p.id).in('vendor_id', del));
+      }
       await reloadAdmin(); toast('已更新帳號');
     });
-    r.append(nm, role, ven, lab, sv, em, sitesBox); list.appendChild(r);
+    r.append(nm, role, ven, lab, sv, em, venBox, sitesBox); list.appendChild(r);
   });
 }

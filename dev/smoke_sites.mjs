@@ -21,7 +21,7 @@ async function open(email, init) {
 const init = () => {
   const T = window.__db.T; T.sites.push({ id: 2, name: '第二案場', sort: 2, active: true });
   T.profiles.push({ id: 'u-new', name: '王小明', email: 'new@x.com', role: 'user', active: false, pending: true, created_at: '2026-10-23' });
-  T.user_sites = [{ user_id: 'u-staff', site_id: 1 }];
+  T.user_sites = [{ user_id: 'u-staff', site_id: 1 }]; T.user_vendors = [];
 };
 let page = await open('boss@x.com', init);
 await page.click('#t-admin'); await page.click('#adm-tabs button[data-tab=user]'); await page.waitForTimeout(200);
@@ -36,6 +36,18 @@ await page.locator('.sublist .r', { hasText: 'staff@x.com' }).locator('button:ha
 const us = await page.evaluate(() => window.__db.T.user_sites.filter(x => x.user_id === 'u-staff').map(x => x.site_id).sort());
 ok(us.join(',') === '2', '儲存後只開通第二案場：' + us);
 ok(await page.locator('.sublist .r', { hasText: 'boss@x.com' }).locator('input[data-site="1"]').isDisabled(), '管理者的案場勾選鎖住（看得到全部）');
+// 廠商帳號可以加其他公司名
+{
+  const r = () => page.locator('.sublist .r', { hasText: 'staff@x.com' });
+  await r().locator('select').first().selectOption('vendor'); await r().locator('select').nth(1).selectOption('1');
+  ok(await r().locator('.chips').isVisible() && (await r().locator('.chips').textContent()).includes('其他公司名'), '角色選廠商後出現「其他公司名」');
+  await r().locator('.chips select').selectOption('2');
+  ok((await r().locator('.chips').textContent()).includes('健暉工程行 ×'), '加上第二個公司名');
+  await r().locator('button:has-text("儲存")').click(); await page.waitForTimeout(300);
+  const uv = await page.evaluate(() => window.__db.T.user_vendors.filter(x => x.user_id === 'u-staff').map(x => x.vendor_id));
+  const pr = await page.evaluate(() => window.__db.T.profiles.find(x => x.id === 'u-staff'));
+  ok(pr.role === 'vendor' && pr.vendor_id === 1 && uv.join(',') === '2', '儲存：主要公司 1、其他公司名 2');
+}
 ok(page.errors.length === 0, 'JS 錯誤：' + page.errors.join('|'));
 page = await open('staff@x.com', () => { window.__db.T.sites.length = 0; });
 ok((await page.textContent('#bld')).includes('還沒開通任何案場'), '沒有案場的人看到找管理者的提示');

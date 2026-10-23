@@ -36,6 +36,9 @@ async function loadMaster() {
   // 帳號可用案場（23_案場權限.sql；還沒執行時不分案場）
   const ust = await sb.from('user_sites').select('*');   // 管理者拿到全部，其他人只拿到自己的
   S.m.user_sites = ust.error ? [] : (ust.data || []); S.noUserSites = !!ust.error;
+  // 廠商帳號的其他公司名（26_廠商帳號多家公司.sql；還沒執行時一個帳號只對一家）
+  const uv = await sb.from('user_vendors').select('*');
+  S.m.user_vendors = uv.error ? [] : (uv.data || []); S.noUserVendors = !!uv.error;
   // 專有戶／公設（12_專有公設.sql；還沒執行時就當作只有一區，畫面跟以前一樣）
   const zs = await sb.from('zones').select('*');
   S.m.zones = zs.error ? [] : (zs.data || []); S.noZones = !!zs.error;
