@@ -284,8 +284,9 @@ $('sh-pass').onclick = e => guard(e.currentTarget, async () => {
 $('sh-signgo').onclick = e => guard(e.currentTarget, async () => {
   const blob = await openSignPad(); if (!blob) return;
   await persist();
-  await uploadPhoto(cur.id, 'sign', blob);
+  const ph = await uploadPhoto(cur.id, 'sign', blob);
   await setStatus({ status: 'closed', close_type: cur.close_type || '複驗合格', close_reason: cur.close_reason || null, signed_name: $('sh-signname').value.trim() || null, signed_date: $('sh-signdate').value || today() });
+  await recordSign([cur], cur.signed_name || null, cur.signed_date || today(), ph.path, { [cur.id]: ctx.no });
   done('客戶已簽認，結案');
 });
 $('sh-reopen').onclick = e => {

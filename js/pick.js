@@ -142,6 +142,13 @@ function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清�
   const rows = S.unitDefects.filter(d => d.status === 'signing');
   box.hidden = !rows.length || isVendor(); if (box.hidden) return;
   box.appendChild(el('b', null, `本戶有 ${rows.length} 筆待簽認`));
+  // 簽名前讓客戶看清楚這次簽的是哪幾筆
+  const nos = {}; S.unitDefects.forEach((d, i) => { nos[d.id] = i + 1; });
+  const cover = el('details'); cover.open = rows.length <= 6;
+  cover.appendChild(el('summary', null, `這次簽認涵蓋的 ${rows.length} 筆`));
+  rows.forEach(d => cover.appendChild(el('div', 'hint', `#${nos[d.id]}　${M.name('spaces', d.space_id) || '全區'}　${M.name('categories', d.category_id)}／${M.name('items', d.item_id)}` +
+    (d.close_type === '不修' ? `（不修：${d.close_reason || ''}）` : ''))));
+  box.appendChild(cover);
   const r = el('div', 'row');
   const nm = el('input'); nm.type = 'text'; nm.placeholder = '簽認人（選填）'; nm.style.flex = '1'; nm.style.minWidth = '140px';
   const dt = el('input'); dt.type = 'date'; dt.value = today(); dt.style.flex = '1'; dt.style.minWidth = '140px';
@@ -149,19 +156,36 @@ function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清�
   const go = el('button', 'btn block', `整戶簽名，${rows.length} 筆一起結案`); box.appendChild(go);
   go.onclick = () => guard(go, async () => {
     const blob = await openSignPad(`請客戶簽名（本戶 ${rows.length} 筆一起結案）`); if (!blob) return;
-    const name = nm.value.trim() || null; let n = 0;
+    const name = nm.value.trim() || null; let n = 0, signPath = null; const done = [];
     for (const d of rows) {
-      await uploadPhoto(d.id, 'sign', blob).catch(e => { throw new Error(errMsg(e) + `（已完成 ${n} 筆）`); });
+      const ph = await uploadPhoto(d.id, 'sign', blob).catch(e => { throw new Error(errMsg(e) + `（已完成 ${n} 筆）`); });
+      signPath = signPath || ph.path;
       const { data, error } = await sb.from('defects').update({ status: 'closed', close_type: d.close_type || '複驗合格', close_reason: d.close_reason || null, signed_name: name, signed_date: dt.value || today() })
         .eq('id', d.id).eq('status', 'signing').select('id');
       if (error) throw new Error(errMsg(error) + `（已完成 ${n} 筆）`);
-      n += data.length;
+      n += data.length; if (data.length) done.push(d);
     }
+    await recordSign(done, name, dt.value || today(), signPath, nos);
     toast(`已簽認結案 ${n} 筆`); renderFill();
   });
 }
+// 上次簽認後有新增或重新開案的缺失：提示要再請客戶簽一次
+async function drawResign() {
+  const box = $('resign'); box.hidden = true; const s = S.sel, tok = fillToken;
+  if (isVendor() || !needSign(s.typeId)) return;
+  const { data, error } = await sb.from('sign_records').select('at,signed_date,signed_name,defect_ids').eq('unit_id', s.unitId).eq('inspect_type_id', s.typeId)
+    .eq('floor', s.floor).order('at', { ascending: false }).limit(20);
+  if (error || !data || !data.length || tok !== fillToken) return;
+  const signed = new Set(data.flatMap(r => r.defect_ids)), last = data[0];
+  const added = S.unitDefects.filter(d => d.status !== 'closed' && !signed.has(d.id) && d.created_at > last.at).length;
+  const reopened = S.unitDefects.filter(d => d.status !== 'closed' && signed.has(d.id)).length;
+  if (!added && !reopened) return;
+  box.textContent = `上次簽認（${last.signed_date || fmtTime(last.at)}${last.signed_name ? '，' + last.signed_name : ''}）之後，` +
+    [added ? `新增 ${added} 筆` : '', reopened ? `重新開案 ${reopened} 筆` : ''].filter(Boolean).join('、') + '，這些處理完要再請客戶簽認。';
+  box.hidden = false;
+}
 function drawList() {
-  drawUnitSign();
+  drawUnitSign(); drawResign();
   $('cnt').textContent = `（${S.unitDefects.length}）`;
   const box = $('dlist'); box.innerHTML = '';
   if (!S.unitDefects.length) box.appendChild(el('p', 'hint', '這戶目前沒有缺失紀錄。'));

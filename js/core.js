@@ -255,3 +255,14 @@ function fitPlan(box, img, vh) {
 }
 const fitMainPlan = fitPlan($('plan'), $('planimg'), 0.6);
 const fitMiniPlan = fitPlan($('sh-mini'), $('sh-miniimg'), 0.32);
+
+// 簽認紀錄（24_簽認紀錄.sql）：記下這次簽名涵蓋哪些缺失和當時的內容；資料表還沒建就略過
+async function recordSign(rows, name, date, path, nos = {}) {
+  if (!rows.length) return;
+  const d0 = rows[0];
+  const snapshot = rows.map(d => ({ id: d.id, 編號: nos[d.id] || d.id, 空間: M.name('spaces', d.space_id), 工項: M.name('categories', d.category_id),
+    缺失內容: M.name('items', d.item_id), 說明: d.description || '', 結案方式: d.close_type || '複驗合格' }));
+  const { error } = await sb.from('sign_records').insert({ site_id: d0.site_id, inspect_type_id: d0.inspect_type_id, unit_id: d0.unit_id, floor: d0.floor,
+    defect_ids: rows.map(d => d.id), snapshot, signed_name: name, signed_date: date, sign_path: path || null, by_user: S.user.id });
+  if (error) console.warn('簽認紀錄沒有寫入：', errMsg(error));
+}
