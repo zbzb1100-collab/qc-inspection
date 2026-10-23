@@ -548,15 +548,37 @@ function renderUserAdmin(root) {
     role.onchange = () => { ven.hidden = role.value !== 'vendor'; };
     const lab = el('label', 'hint'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = p.active; lab.append(ck, document.createTextNode(' 啟用'));
     if (self) { role.disabled = true; ck.disabled = true; }
+    // 可用案場（23_案場權限.sql）：管理者看得到全部；其他人只看得到勾選的
+    const sitesBox = el('div', 'row'); sitesBox.style.width = '100%'; sitesBox.style.gap = '4px 12px';
+    const siteCks = [];
+    if (!S.noUserSites && S.m.sites.length) {
+      sitesBox.appendChild(el('span', 'hint', '可用案場：'));
+      const mine = new Set(S.m.user_sites.filter(x => x.user_id === p.id).map(x => x.site_id));
+      M.list('sites', false).forEach(st => {
+        const l = el('label', 'hint'); const c = el('input'); c.type = 'checkbox'; c.checked = mine.has(st.id); c.dataset.site = st.id;
+        l.append(c, document.createTextNode(' ' + st.name)); sitesBox.appendChild(l); siteCks.push(c);
+      });
+      const paintSites = () => { const a = role.value === 'admin'; siteCks.forEach(c => { c.disabled = a; }); sitesBox.title = a ? '管理者看得到全部案場' : ''; };
+      role.addEventListener('change', paintSites); paintSites();
+      if (p.pending && !p.active && !mine.size) { const c = siteCks.find(c => Number(c.dataset.site) === S.sel.siteId) || siteCks[0]; if (c) c.checked = true; }   // 待開通：預設勾目前案場
+    }
     const sv = el('button', 'btn small', '儲存'); sv.onclick = () => guard(sv, async () => {
       if (role.value === 'vendor' && !ven.value) throw new Error('廠商帳號要選是哪一家廠商');
       const patch = { name: nm.value.trim(), role: role.value, active: ck.checked };
       if (p.pending && ck.checked) patch.pending = false;   // 開通了就不再是待開通
       if (role.value === 'vendor' || p.vendor_id != null) patch.vendor_id = role.value === 'vendor' ? Number(ven.value) : null;
+      if (siteCks.length && ck.checked && role.value !== 'admin' && !siteCks.some(c => c.checked)) throw new Error('請至少勾一個可用案場，不然他登入後什麼都看不到');
       const { error } = await sb.from('profiles').update(patch).eq('id', p.id);
       if (error) throw (/profiles_role_check|vendor_id/.test(error.message) ? new Error('要先到 Supabase 執行 6_廠商帳號.sql，才能設定廠商帳號') : error);
+      if (siteCks.length) {
+        const had = new Set(S.m.user_sites.filter(x => x.user_id === p.id).map(x => x.site_id));
+        const add = siteCks.filter(c => c.checked && !had.has(Number(c.dataset.site))).map(c => ({ user_id: p.id, site_id: Number(c.dataset.site) }));
+        const del = siteCks.filter(c => !c.checked && had.has(Number(c.dataset.site))).map(c => Number(c.dataset.site));
+        if (add.length) await q(sb.from('user_sites').insert(add));
+        if (del.length) await q(sb.from('user_sites').delete().eq('user_id', p.id).in('site_id', del));
+      }
       await reloadAdmin(); toast('已更新帳號');
     });
-    r.append(nm, role, ven, lab, sv, em); list.appendChild(r);
+    r.append(nm, role, ven, lab, sv, em, sitesBox); list.appendChild(r);
   });
 }

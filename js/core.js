@@ -33,6 +33,9 @@ async function loadMaster() {
   // 每戶空間別（新增的表；還沒建表時不要讓整個系統壞掉）
   const us = await sb.from('unit_spaces').select('*');
   S.m.unit_spaces = us.error ? [] : (us.data || []); S.noUnitSpaces = !!us.error;
+  // 帳號可用案場（23_案場權限.sql；還沒執行時不分案場）
+  const ust = await sb.from('user_sites').select('*');   // 管理者拿到全部，其他人只拿到自己的
+  S.m.user_sites = ust.error ? [] : (ust.data || []); S.noUserSites = !!ust.error;
   // 專有戶／公設（12_專有公設.sql；還沒執行時就當作只有一區，畫面跟以前一樣）
   const zs = await sb.from('zones').select('*');
   S.m.zones = zs.error ? [] : (zs.data || []); S.noZones = !!zs.error;

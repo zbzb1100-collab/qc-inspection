@@ -33,7 +33,7 @@ async function renderPick() {
   const ulab = M.unitLabel(s.zoneId);
   $('unit-label').textContent = ulab;
   chips($('itype'), M.typesOf(s.zoneId), s.typeId, r => { s.typeId = r.id; saveSel(); renderPick(); }, { empty: '這一區還沒有檢查類型，請管理者到「管理」勾選。' });
-  chips($('bld'), M.buildingsOf(s.siteId, s.zoneId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); }, { empty: '這一區還沒有棟別，請管理者到「管理」新增。' });
+  chips($('bld'), M.buildingsOf(s.siteId, s.zoneId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); }, { empty: sites.length ? '這一區還沒有棟別，請管理者到「管理」新增。' : '你的帳號還沒開通任何案場，請找管理者到「管理 → 帳號」勾選可用案場。' });
   const b = M.get('buildings', s.bldId);
   const fb = $('floor'); fb.innerHTML = '';
   (b ? b.floors : []).forEach(f => {
