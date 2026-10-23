@@ -22,7 +22,7 @@ function normalizeSel() {
 
 let pickToken = 0;
 async function renderPick() {
-  normalizeSel();
+  normalizeSel(); drawRecent();
   const s = S.sel;
   const sites = M.list('sites');
   $('site-wrap').hidden = sites.length <= 1;
@@ -65,8 +65,30 @@ $('site').onchange = e => { S.sel.siteId = Number(e.target.value); S.sel.bldId =
 $('go').onclick = () => {
   if (!S.sel.unitId) { toast('請先選' + M.unitLabel(S.sel.zoneId)); return; }
   if (!S.sel.floor) { toast('請先選樓層'); return; }
+  rememberRecent(); S.fillFilter = null;
   show('fill');
 };
+// 最近檢查過的戶（每台裝置各自記，最多 6 戶），點一下直接進填寫頁
+const RECENT_KEY = 'qc-recent';
+function loadRecent() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (e) { return []; } }
+function rememberRecent() {
+  const s = S.sel, k = r => [r.siteId, r.typeId, r.unitId, r.floor].join('|');
+  const me = { siteId: s.siteId, zoneId: s.zoneId, typeId: s.typeId, bldId: s.bldId, floor: s.floor, unitId: s.unitId };
+  const list = [me, ...loadRecent().filter(r => k(r) !== k(me))].slice(0, 6);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (e) { /* 無痕模式等 */ }
+}
+function drawRecent() {
+  const box = $('recent'); box.innerHTML = '';
+  const list = loadRecent().filter(r => M.get('units', r.unitId) && M.get('buildings', r.bldId) && M.get('inspect_types', r.typeId) && M.list('sites').some(x => x.id === r.siteId));
+  $('recent-wrap').hidden = !list.length;
+  list.forEach(r => {
+    const b = el('button', 'chip', `${M.name('buildings', r.bldId)} ${r.floor} ${M.unitCode(r.unitId)}`);
+    b.type = 'button'; b.title = M.name('inspect_types', r.typeId);
+    b.appendChild(el('small', 'hint', '　' + M.name('inspect_types', r.typeId)));
+    b.onclick = () => { Object.assign(S.sel, r); saveSel(); rememberRecent(); S.fillFilter = null; show('fill'); };
+    box.appendChild(b);
+  });
+}
 
 // ---------- 填寫 ----------
 function pickPlan(unitId, floor) {
@@ -184,12 +206,30 @@ async function drawResign() {
     [added ? `新增 ${added} 筆` : '', reopened ? `重新開案 ${reopened} 筆` : ''].filter(Boolean).join('、') + '，這些處理完要再請客戶簽認。';
   box.hidden = false;
 }
+// 頁首統計：點一下只看那個狀態，再點一次看全部
+const FILL_TILES = [[null, '全部'], ['todo', '待修'], ['fixed', '待複驗'], ['signing', '待簽認'], ['closed', '結案']];
+function drawFillSum() {
+  const box = $('fillsum'); box.innerHTML = ''; const all = S.unitDefects;
+  FILL_TILES.forEach(([k, n]) => {
+    const c = k ? all.filter(d => d.status === k).length : all.length;
+    if (k === 'signing' && !c && !needSign(S.sel.typeId)) return;
+    const b = el('button', (k || 'all') + ((S.fillFilter ?? null) === k ? ' on' : '')); b.type = 'button';
+    b.append(el('b', null, String(c)), el('span', null, n));
+    b.onclick = () => { S.fillFilter = S.fillFilter === k || !k ? null : k; drawList(); };
+    box.appendChild(b);
+  });
+  box.style.gridTemplateColumns = `repeat(${box.children.length},1fr)`;
+}
 function drawList() {
-  drawUnitSign(); drawResign();
-  $('cnt').textContent = `（${S.unitDefects.length}）`;
+  drawUnitSign(); drawResign(); drawFillSum();
+  const f = S.fillFilter, shown = S.unitDefects.filter(d => !f || d.status === f);
+  $('cnt').textContent = f ? `（${shown.length}／${S.unitDefects.length}）` : `（${S.unitDefects.length}）`;
+  $('fillfilter-note').textContent = f ? `只看「${FILL_TILES.find(t => t[0] === f)[1]}」，點上方「全部」看全部` : '';
   const box = $('dlist'); box.innerHTML = '';
   if (!S.unitDefects.length) box.appendChild(el('p', 'hint', '這戶目前沒有缺失紀錄。'));
+  else if (!shown.length) box.appendChild(el('p', 'hint', '這個狀態沒有缺失。'));
   S.unitDefects.forEach((d, i) => {
+    if (f && d.status !== f) return;
     const it = el('div', 'item'); it.tabIndex = 0;
     it.appendChild(el('div', 'no ' + d.status, String(i + 1)));
     const t = el('div', 't');
