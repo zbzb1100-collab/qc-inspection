@@ -98,7 +98,17 @@
   const functions = { async invoke(name, opt) { fnCalls.push({ name, body: opt && opt.body, by: me });
     if (window.__fnFail) return { data: null, error: { message: 'Edge Function returned a non-2xx status code', context: { json: async () => ({ error: window.__fnFail }) } } };
     return { data: { fired: 1 }, error: null }; } };
-  window.__mockSb = { from: builder, storage, auth, functions };
+  // 資料庫函式（同 22_匯入紀錄與轉檔權限.sql 的 import_report_job）
+  async function rpc(name, args) {
+    if (name !== 'import_report_job') return { data: null, error: { message: 'Could not find the function public.' + name } };
+    const j = (T.report_jobs || []).find(x => x.id === args.p_job);
+    if (!j) return { data: null, error: { message: '找不到這份報告' } };
+    if (j.status === 'imported') return { data: null, error: { message: '這份報告已經匯入過了' } };
+    const ids = args.p_rows.map(r => ins('defects', { ...r, site_id: j.site_id, status: 'todo', created_by: me, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }).id);
+    Object.assign(j, { status: 'imported', imported_by: me, imported_at: new Date().toISOString() });
+    return { data: ids, error: null };
+  }
+  window.__mockSb = { from: builder, storage, auth, functions, rpc };
   window.__db = { T, files, fnCalls };
   window.supabase = { createClient: () => window.__mockSb };
 })();

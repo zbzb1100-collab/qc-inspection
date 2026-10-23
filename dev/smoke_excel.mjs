@@ -100,7 +100,7 @@ await page.locator('#xl-file').setInputFiles('/tmp/claude-0/xl/sync.xlsx'); awai
 ok((await page.textContent('#xl-out')).includes('新增 0'), '未勾完整同步時不動資料（只預覽新增/修改）');
 await page.locator('#xl-sync').check(); await page.waitForTimeout(400);
 const pv = await page.textContent('#xl-out');
-ok(pv.includes('A棟 A1（停用）') && pv.includes('A棟 A2（刪除）'), '預覽：有紀錄的戶別標停用、沒用過的標刪除');
+ok(pv.includes('停用　A棟 A1') && pv.includes('刪除　A棟 A2') && pv.includes('會刪除 2 個'), '預覽明細：有紀錄的戶別標停用、沒用過的標刪除');
 const [bk] = await Promise.all([page.waitForEvent('download'), page.click('#xl-go')]);
 ok(!!bk, '同步前自動下載備份');
 await page.waitForTimeout(800);

@@ -22,7 +22,7 @@ function normalizeSel() {
 
 let pickToken = 0;
 async function renderPick() {
-  normalizeSel();
+  normalizeSel(); drawRecent();
   const s = S.sel;
   const sites = M.list('sites');
   $('site-wrap').hidden = sites.length <= 1;
@@ -33,7 +33,7 @@ async function renderPick() {
   const ulab = M.unitLabel(s.zoneId);
   $('unit-label').textContent = ulab;
   chips($('itype'), M.typesOf(s.zoneId), s.typeId, r => { s.typeId = r.id; saveSel(); renderPick(); }, { empty: '這一區還沒有檢查類型，請管理者到「管理」勾選。' });
-  chips($('bld'), M.buildingsOf(s.siteId, s.zoneId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); }, { empty: '這一區還沒有棟別，請管理者到「管理」新增。' });
+  chips($('bld'), M.buildingsOf(s.siteId, s.zoneId), s.bldId, r => { s.bldId = r.id; s.unitId = null; saveSel(); renderPick(); }, { empty: sites.length ? '這一區還沒有棟別，請管理者到「管理」新增。' : '你的帳號還沒開通任何案場，請找管理者到「管理 → 帳號」勾選可用案場。' });
   const b = M.get('buildings', s.bldId);
   const fb = $('floor'); fb.innerHTML = '';
   (b ? b.floors : []).forEach(f => {
@@ -65,8 +65,30 @@ $('site').onchange = e => { S.sel.siteId = Number(e.target.value); S.sel.bldId =
 $('go').onclick = () => {
   if (!S.sel.unitId) { toast('請先選' + M.unitLabel(S.sel.zoneId)); return; }
   if (!S.sel.floor) { toast('請先選樓層'); return; }
+  rememberRecent(); S.fillFilter = null;
   show('fill');
 };
+// 最近檢查過的戶（每台裝置各自記，最多 6 戶），點一下直接進填寫頁
+const RECENT_KEY = 'qc-recent';
+function loadRecent() { try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch (e) { return []; } }
+function rememberRecent() {
+  const s = S.sel, k = r => [r.siteId, r.typeId, r.unitId, r.floor].join('|');
+  const me = { siteId: s.siteId, zoneId: s.zoneId, typeId: s.typeId, bldId: s.bldId, floor: s.floor, unitId: s.unitId };
+  const list = [me, ...loadRecent().filter(r => k(r) !== k(me))].slice(0, 6);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (e) { /* 無痕模式等 */ }
+}
+function drawRecent() {
+  const box = $('recent'); box.innerHTML = '';
+  const list = loadRecent().filter(r => M.get('units', r.unitId) && M.get('buildings', r.bldId) && M.get('inspect_types', r.typeId) && M.list('sites').some(x => x.id === r.siteId));
+  $('recent-wrap').hidden = !list.length;
+  list.forEach(r => {
+    const b = el('button', 'chip', `${M.name('buildings', r.bldId)} ${r.floor} ${M.unitCode(r.unitId)}`);
+    b.type = 'button'; b.title = M.name('inspect_types', r.typeId);
+    b.appendChild(el('small', 'hint', '　' + M.name('inspect_types', r.typeId)));
+    b.onclick = () => { Object.assign(S.sel, r); saveSel(); rememberRecent(); S.fillFilter = null; show('fill'); };
+    box.appendChild(b);
+  });
+}
 
 // ---------- 填寫 ----------
 function pickPlan(unitId, floor) {
@@ -142,6 +164,13 @@ function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清�
   const rows = S.unitDefects.filter(d => d.status === 'signing');
   box.hidden = !rows.length || isVendor(); if (box.hidden) return;
   box.appendChild(el('b', null, `本戶有 ${rows.length} 筆待簽認`));
+  // 簽名前讓客戶看清楚這次簽的是哪幾筆
+  const nos = {}; S.unitDefects.forEach((d, i) => { nos[d.id] = i + 1; });
+  const cover = el('details'); cover.open = rows.length <= 6;
+  cover.appendChild(el('summary', null, `這次簽認涵蓋的 ${rows.length} 筆`));
+  rows.forEach(d => cover.appendChild(el('div', 'hint', `#${nos[d.id]}　${M.name('spaces', d.space_id) || '全區'}　${M.name('categories', d.category_id)}／${M.name('items', d.item_id)}` +
+    (d.close_type === '不修' ? `（不修：${d.close_reason || ''}）` : ''))));
+  box.appendChild(cover);
   const r = el('div', 'row');
   const nm = el('input'); nm.type = 'text'; nm.placeholder = '簽認人（選填）'; nm.style.flex = '1'; nm.style.minWidth = '140px';
   const dt = el('input'); dt.type = 'date'; dt.value = today(); dt.style.flex = '1'; dt.style.minWidth = '140px';
@@ -149,23 +178,58 @@ function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清�
   const go = el('button', 'btn block', `整戶簽名，${rows.length} 筆一起結案`); box.appendChild(go);
   go.onclick = () => guard(go, async () => {
     const blob = await openSignPad(`請客戶簽名（本戶 ${rows.length} 筆一起結案）`); if (!blob) return;
-    const name = nm.value.trim() || null; let n = 0;
+    const name = nm.value.trim() || null; let n = 0, signPath = null; const done = [];
     for (const d of rows) {
-      await uploadPhoto(d.id, 'sign', blob).catch(e => { throw new Error(errMsg(e) + `（已完成 ${n} 筆）`); });
+      const ph = await uploadPhoto(d.id, 'sign', blob).catch(e => { throw new Error(errMsg(e) + `（已完成 ${n} 筆）`); });
+      signPath = signPath || ph.path;
       const { data, error } = await sb.from('defects').update({ status: 'closed', close_type: d.close_type || '複驗合格', close_reason: d.close_reason || null, signed_name: name, signed_date: dt.value || today() })
         .eq('id', d.id).eq('status', 'signing').select('id');
       if (error) throw new Error(errMsg(error) + `（已完成 ${n} 筆）`);
-      n += data.length;
+      n += data.length; if (data.length) done.push(d);
     }
+    await recordSign(done, name, dt.value || today(), signPath, nos);
     toast(`已簽認結案 ${n} 筆`); renderFill();
   });
 }
+// 上次簽認後有新增或重新開案的缺失：提示要再請客戶簽一次
+async function drawResign() {
+  const box = $('resign'); box.hidden = true; const s = S.sel, tok = fillToken;
+  if (isVendor() || !needSign(s.typeId)) return;
+  const { data, error } = await sb.from('sign_records').select('at,signed_date,signed_name,defect_ids').eq('unit_id', s.unitId).eq('inspect_type_id', s.typeId)
+    .eq('floor', s.floor).order('at', { ascending: false }).limit(20);
+  if (error || !data || !data.length || tok !== fillToken) return;
+  const signed = new Set(data.flatMap(r => r.defect_ids)), last = data[0];
+  const added = S.unitDefects.filter(d => d.status !== 'closed' && !signed.has(d.id) && d.created_at > last.at).length;
+  const reopened = S.unitDefects.filter(d => d.status !== 'closed' && signed.has(d.id)).length;
+  if (!added && !reopened) return;
+  box.textContent = `上次簽認（${last.signed_date || fmtTime(last.at)}${last.signed_name ? '，' + last.signed_name : ''}）之後，` +
+    [added ? `新增 ${added} 筆` : '', reopened ? `重新開案 ${reopened} 筆` : ''].filter(Boolean).join('、') + '，這些處理完要再請客戶簽認。';
+  box.hidden = false;
+}
+// 頁首統計：點一下只看那個狀態，再點一次看全部
+const FILL_TILES = [[null, '全部'], ['todo', '待修'], ['fixed', '待複驗'], ['signing', '待簽認'], ['closed', '結案']];
+function drawFillSum() {
+  const box = $('fillsum'); box.innerHTML = ''; const all = S.unitDefects;
+  FILL_TILES.forEach(([k, n]) => {
+    const c = k ? all.filter(d => d.status === k).length : all.length;
+    if (k === 'signing' && !c && !needSign(S.sel.typeId)) return;
+    const b = el('button', (k || 'all') + ((S.fillFilter ?? null) === k ? ' on' : '')); b.type = 'button';
+    b.append(el('b', null, String(c)), el('span', null, n));
+    b.onclick = () => { S.fillFilter = S.fillFilter === k || !k ? null : k; drawList(); };
+    box.appendChild(b);
+  });
+  box.style.gridTemplateColumns = `repeat(${box.children.length},1fr)`;
+}
 function drawList() {
-  drawUnitSign();
-  $('cnt').textContent = `（${S.unitDefects.length}）`;
+  drawUnitSign(); drawResign(); drawFillSum();
+  const f = S.fillFilter, shown = S.unitDefects.filter(d => !f || d.status === f);
+  $('cnt').textContent = f ? `（${shown.length}／${S.unitDefects.length}）` : `（${S.unitDefects.length}）`;
+  $('fillfilter-note').textContent = f ? `只看「${FILL_TILES.find(t => t[0] === f)[1]}」，點上方「全部」看全部` : '';
   const box = $('dlist'); box.innerHTML = '';
   if (!S.unitDefects.length) box.appendChild(el('p', 'hint', '這戶目前沒有缺失紀錄。'));
+  else if (!shown.length) box.appendChild(el('p', 'hint', '這個狀態沒有缺失。'));
   S.unitDefects.forEach((d, i) => {
+    if (f && d.status !== f) return;
     const it = el('div', 'item'); it.tabIndex = 0;
     it.appendChild(el('div', 'no ' + d.status, String(i + 1)));
     const t = el('div', 't');

@@ -108,9 +108,9 @@ document.querySelectorAll('.stat > div').forEach(d => {
 async function photoCounts(ids) {
   const cnt = {};
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await sb.from('defect_photos').select('defect_id,kind').in('defect_id', ids.slice(i, i + 200)).limit(5000);
+    const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).limit(5000);
     if (error) throw error;
-    data.forEach(p => { const c = cnt[p.defect_id] || (cnt[p.defect_id] = { before: 0, after: 0, sign: 0 }); c[p.kind]++; });
+    data.filter(p => !p.deleted_at).forEach(p => { const c = cnt[p.defect_id] || (cnt[p.defect_id] = { before: 0, after: 0, sign: 0 }); c[p.kind]++; });
   }
   return cnt;
 }
@@ -152,8 +152,8 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   const rows = shownRows().slice().sort((a, b) => a.id - b.id);
   const ids = rows.map(r => r.id); let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await sb.from('defect_photos').select('id,defect_id,kind,path').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
-    if (error) throw error; photos = photos.concat(data);
+    const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
+    if (error) throw error; photos = photos.concat(data.filter(p => !p.deleted_at));
   }
   const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; (by[k] = by[k] || []).length < PHOTO_PER_KIND && by[k].push(p); });
   const use = Object.values(by).flat();
@@ -257,8 +257,8 @@ $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   if (rows.length > 150) throw new Error(`含照片的 PDF 一次最多 150 筆，目前有 ${rows.length} 筆，請先縮小篩選條件（例如先選棟別或樓層）。`);
   const ids = rows.map(r => r.id); let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await sb.from('defect_photos').select('id,defect_id,kind,path').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
-    if (error) throw error; photos = photos.concat(data);
+    const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
+    if (error) throw error; photos = photos.concat(data.filter(p => !p.deleted_at));
   }
   const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; const a = (by[k] = by[k] || []); if (a.length < 4) a.push(p); });
   const use = Object.values(by).flat();

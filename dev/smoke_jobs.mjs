@@ -59,7 +59,7 @@ await page.locator('[data-job] tbody tr').nth(1).locator('select').nth(3).select
 await page.locator('[data-job] tbody tr').nth(1).locator('select').nth(1).selectOption('2F');
 ok((await page.locator('[data-job] tbody tr').nth(2).locator('select').nth(1).inputValue()) === '3F', '改第 2 列樓層不影響原文不同戶的第 3 列');
 await page.click('#im-go');
-await page.waitForFunction(() => window.__db.T.report_jobs[0].status === 'imported');
+await page.waitForFunction(() => window.__db.T.report_jobs[0].status === 'imported' && window.__db.T.defect_photos.length >= 2);
 db = await page.evaluate(() => ({ d: window.__db.T.defects, p: window.__db.T.defect_photos, j: window.__db.T.report_jobs[0] }));
 ok(db.d.length === 3 && db.d[2].space_id === 3 && db.d[1].space_id === 3 && db.d[0].description === '窗框滲水（報告編號 1）', '匯入 2 筆缺失（含補選空間）');
 ok(db.d[1].floor === '2F' && db.d[1].unit_id === 1 && db.d[2].floor === '3F' && db.d[2].unit_id === 2, '戶別：人工重選與 AI 改正都照預覽寫入');

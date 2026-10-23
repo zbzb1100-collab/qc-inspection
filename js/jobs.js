@@ -142,9 +142,20 @@ async function jobPreview(j, out, listBox) {
     out.appendChild(d);
   }
   const box = el('div', 'stack'); out.appendChild(box);
+  let viaRpc = true;
   imMountPreview(box, rows.map(r => imResolve(r, photos)), async () => {
-    const { error } = await sb.from('report_jobs').update({ status: 'imported', imported_by: S.user.id, imported_at: new Date().toISOString() }).eq('id', j.id);
-    if (error) toast('缺失已匯入，但轉檔狀態沒更新：' + errMsg(error));
+    if (!viaRpc) {   // 資料庫還沒執行 22_匯入紀錄與轉檔權限.sql：照舊逐筆匯入後標記
+      const { error } = await sb.from('report_jobs').update({ status: 'imported', imported_by: S.user.id, imported_at: new Date().toISOString() }).eq('id', j.id);
+      if (error) toast('缺失已匯入，但轉檔狀態沒更新：' + errMsg(error));
+    }
     await drawJobs(listBox);
+  }, {
+    // 22 之後：缺失一次寫入並標記已匯入，失敗就一筆都不寫，也不會被重複匯入
+    insertAll: async recs => {
+      const { data, error } = await sb.rpc('import_report_job', { p_job: j.id, p_rows: recs });
+      if (error && /import_report_job|function/i.test(errMsg(error)) && !/已經匯入|還沒轉檔/.test(errMsg(error))) { viaRpc = false; return null; }
+      if (error) throw error;
+      return data;
+    }
   });
 }

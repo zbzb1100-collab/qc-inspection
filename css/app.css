@@ -411,3 +411,30 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .lt td.nm .hint.warn{color:var(--todo);font-size:12px;padding-left:8px}
 .err.ok{color:var(--closed)}
 .banner.warn{background:color-mix(in srgb,var(--fixed) 14%,transparent);border-color:color-mix(in srgb,var(--fixed) 45%,transparent)}
+
+/* 修改歷程 */
+#sh-log{margin:6px 0}
+.loglist{display:flex;flex-direction:column;gap:8px;margin-top:8px;max-height:40vh;overflow:auto}
+.logrow{border-left:3px solid var(--line);padding:2px 0 2px 10px;font-size:15px}
+.logrow small{display:block}
+#sh-trash{margin:6px 0}
+.trashph{display:flex;flex-direction:column;gap:4px;width:110px}
+.trashph img{opacity:.7}
+.trashph .btn{min-height:36px;padding:4px 8px}
+.xl-diff{margin:4px 0 8px}
+.xl-diff summary{font-size:15px;cursor:pointer;color:var(--accent)}
+.xl-line{font-size:14px;padding:2px 0 2px 8px;border-left:3px solid var(--line)}
+.xl-line.add{border-color:var(--closed)}
+.xl-line.upd{border-color:var(--fixed)}
+.xl-line.rm{border-color:var(--todo)}
+/* 填寫頁：狀態統計可點來篩選；新增缺失固定在下方 */
+.fillsum{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.fillsum button{border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;cursor:pointer;color:var(--ink);font-size:12px;min-height:52px}
+.fillsum button b{font-size:20px;line-height:1.2}
+.fillsum button.on{border-color:var(--accent);box-shadow:inset 0 0 0 2px var(--accent)}
+.fillsum .todo b{color:var(--todo)}.fillsum .fixed b{color:var(--fixed)}.fillsum .signing b{color:var(--sign)}.fillsum .closed b{color:var(--closed)}
+.stickybar{position:sticky;bottom:calc(-90px + 72px + env(safe-area-inset-bottom,0px));z-index:3;padding-top:8px;background:linear-gradient(to bottom,transparent,var(--bg) 30%)}
+.stickybar .btn{min-height:52px;font-size:17px}
+.step{font-weight:700;font-size:15px;color:var(--accent);border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+.nextstep{display:block;width:100%;text-align:left;border:1px solid var(--accent);background:var(--surface2);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:16px;cursor:pointer}
+.nextstep b{color:var(--accent)}

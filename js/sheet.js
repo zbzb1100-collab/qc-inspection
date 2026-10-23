@@ -9,7 +9,7 @@ async function openDefect(row, c) {
     planned_date: today(10), fixed_date: null, description: '', customer_name: lastCustomer(ctx.create.unit_id)
   };
   cur = base;
-  cur.before = []; cur.after = []; cur.sign = []; cur.removed = [];
+  cur.before = []; cur.after = []; cur.sign = []; cur.removed = []; cur.trash = [];
   cur.respTouched = !!row && row.resp_vendor_id !== row.fix_vendor_id;
   $('sheet').hidden = false; $('sheet').querySelector('.panel').scrollTop = 0;
   paintSheet();
@@ -17,7 +17,9 @@ async function openDefect(row, c) {
     const { data, error } = await sb.from('defect_photos').select('*').eq('defect_id', row.id).order('id');
     if (error) { toast(errMsg(error)); return; }
     const urls = await signedUrls('photos', data.map(p => p.path));
-    data.forEach((p, i) => (p.kind === 'after' ? cur.after : p.kind === 'sign' ? cur.sign : cur.before).push({ id: p.id, path: p.path, url: urls[i], by: p.created_by }));
+    cur.trash = [];
+    data.forEach((p, i) => (p.deleted_at ? cur.trash : p.kind === 'after' ? cur.after : p.kind === 'sign' ? cur.sign : cur.before)
+      .push({ id: p.id, kind: p.kind, path: p.path, url: urls[i], by: p.created_by, deleted_at: p.deleted_at, deleted_by: p.deleted_by }));
     paintPhotos();
   }
 }
@@ -58,19 +60,25 @@ function paintSheet() {
   $('sh-signname').value = cur.signed_name || ''; $('sh-signdate').value = cur.signed_date || today();
   $('sh-nofix').hidden = st2 !== 'todo';
   $('sh-reopen').hidden = !(st2 === 'fixed' || st2 === 'signing' || (st2 === 'closed' && isAdmin()));
+  $('sh-reopen').textContent = st2 === 'closed' ? '重新開案（要填原因）' : '複驗不合格／客戶不認可，退回待修';
+  $('sh-reopen-reason').hidden = true; $('sh-reopen-go').hidden = true; $('sh-reopen-reason').value = '';
   $('sh-fixdate-wrap').hidden = !(st2 === 'todo' || (st2 === 'fixed' && !nf));
   $('sh-closeinfo').textContent = st2 === 'closed'
     ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}${cur.signed_name ? `　簽認：${cur.signed_name} ${cur.signed_date || ''}` : ''}`
     : st2 === 'signing' ? `${cur.close_type === '不修' ? `已確認不修（原因：${cur.close_reason || ''}）` : '複驗合格'}，等客戶簽認。請客戶確認後按「客戶簽名」，在簽名板簽名就結案；客戶不認可按「退回待修」。`
     : nf ? `已提出不修（原因：${cur.close_reason || ''}），等驗收人員確認。同意不修按「確認不修」${sign ? '（之後還要客戶簽認）' : '結案'}；不同意按「退回待修」。`
     : (st2 === 'fixed' ? `廠商已修繕，等複驗。複驗合格就按「複驗合格」${sign ? '（之後還要客戶簽認）' : '結案'}；不合格按「退回待修」。` : '修好後拍「修繕後照片」，再按「修繕完成」；不修的話按「不修」填原因，送驗收人員確認。');
-  $('sh-del').hidden = isNew || !isAdmin(); $('sh-del').textContent = '刪除';
+  $('sh-del').hidden = isNew || !isAdmin() || st2 === 'closed'; $('sh-del').textContent = '刪除';
+  $('sh-save').hidden = st2 === 'closed';
   $('sh-trail').textContent = isNew ? '' :
     `建立：${M.userName(cur.created_by)} ${fmtTime(cur.created_at)}　最後修改：${M.userName(cur.updated_by) || M.userName(cur.created_by)} ${fmtTime(cur.updated_at)}` +
     (cur.fixed_at ? `　修繕完成登錄：${M.userName(cur.fixed_by)} ${fmtTime(cur.fixed_at)}` : '') +
     (cur.verified_at ? `　複驗：${M.userName(cur.verified_by)} ${fmtTime(cur.verified_at)}` : '') +
     (cur.closed_at ? `　結案：${M.userName(cur.closed_by)} ${fmtTime(cur.closed_at)}` : '');
+  $('sh-log').hidden = isNew; $('sh-log').open = false; $('sh-loglist').innerHTML = '';
   paintVendorMode();
+  paintLock();
+  paintNext(isNew);
   paintPhotos();
   paintMini();
 }
@@ -85,12 +93,30 @@ async function paintMini() {
   const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
   box.appendChild(pin);
 }
+// 舊缺失：最上面直接說下一步要做什麼，點了捲到修繕區
+function paintNext(isNew) {
+  const b = $('sh-next'), st = cur.status, nf = isNofix(cur), sign = needSign(cur.inspect_type_id), v = isVendor();
+  const msg = isNew ? '' : st === 'todo' ? '修好後拍「修繕後照片」，按「修繕完成」'
+    : st === 'fixed' && !v ? (nf ? '確認是否同意不修' : '到現場複驗，合格按「複驗合格」') + (sign ? '，再請客戶簽認' : '')
+    : st === 'signing' && !v ? '請客戶簽名，就結案' : '';
+  b.hidden = !msg; b.innerHTML = ''; if (!msg) return;
+  b.append(el('b', null, '下一步：'), document.createTextNode(msg + '　↓'));
+}
+$('sh-next').onclick = () => $('sh-repair').scrollIntoView({ behavior: 'smooth', block: 'start' });
+// 已結案：資料鎖定（資料庫也會擋），要改只能由管理者重新開案
+function paintLock() {
+  if (cur.status !== 'closed') return;   // 沒結案時的可否編輯由 paintVendorMode 決定
+  $('sheet').querySelector('.panel').querySelectorAll('.chip, #sh-cust, #sh-date, #sh-desc, #sh-fixvendor-other, #sh-vendor').forEach(x => { x.disabled = true; });
+  $('sh-placerow').hidden = true;
+  $('sh-closeinfo').textContent = '已結案，資料已鎖定。' + $('sh-closeinfo').textContent.replace(/^已結案：/, '結案方式：') +
+    (isAdmin() ? '　要修改請按「重新開案」並填原因。' : '　要修改請找管理者重新開案。');
+}
 // 廠商帳號：缺失內容只能看；只能填修繕完成日、拍修繕後照片、按修繕完成
 function paintVendorMode() {
   const v = isVendor(); const panel = $('sheet').querySelector('.panel');
   panel.querySelectorAll('.chip, #sh-cust, #sh-date, #sh-desc, #sh-fixvendor-other, #sh-vendor').forEach(x => { x.disabled = v; });
   if (!v) return;
-  ['sh-pass', 'sh-sign', 'sh-nofix', 'sh-reopen', 'sh-del', 'sh-save'].forEach(id => { $(id).hidden = true; });
+  ['sh-pass', 'sh-sign', 'sh-nofix', 'sh-reopen', 'sh-del', 'sh-save', 'sh-trash'].forEach(id => { $(id).hidden = true; });
   if (cur.status === 'fixed') $('sh-closeinfo').textContent = '已回報修繕完成，等甲方複驗。';
   if (cur.status === 'todo') $('sh-closeinfo').textContent = '修好後拍「修繕後照片」，再按「修繕完成」回報。';
 }
@@ -105,7 +131,10 @@ function paintChoices() {
     paintChoices();
   });
   const items = cur.category_id ? M.list('items').filter(i => i.category_id === cur.category_id && (M.itemIn(i, zid) || i.id === cur.item_id)) : [];
-  chips($('sh-item'), items, cur.item_id, r => { cur.item_id = r.id; paintChoices(); },
+  chips($('sh-item'), items, cur.item_id, r => {
+    const first = !cur.id && !cur.item_id; cur.item_id = r.id; paintChoices();
+    if (first) $('sh-step2').scrollIntoView({ behavior: 'smooth', block: 'start' });   // 新增時選好分類就帶到第 ② 步
+  },
     { empty: cur.category_id ? '此工項尚無缺失內容，請管理者新增' : '請先選工項' });
   chips($('sh-method'), M.list('repair_methods'), cur.repair_method_id, r => { cur.repair_method_id = cur.repair_method_id === r.id ? null : r.id; paintChoices(); });
   // 修繕廠商：工項預設廠商做成按鈕，其他廠商用下拉
@@ -131,6 +160,27 @@ function paintPhotos() {
   photoBox($('sh-photos'), cur.before, 'before');
   photoBox($('sh-afterphotos'), cur.after, 'after');
   paintSigns();
+  paintTrash();
+}
+// 已刪除的照片：檔案還在，管理者可以還原（已結案要先重新開案）
+function paintTrash() {
+  const w = $('sh-trash'), box = $('sh-trashimg'); box.innerHTML = '';
+  w.hidden = !cur.trash.length || !isAdmin();
+  $('sh-trashsum').textContent = `已刪除的照片 ${cur.trash.length} 張`;
+  cur.trash.forEach(p => {
+    const d = el('div', 'trashph'); const im = el('img'); im.src = p.url; im.alt = '已刪除的照片'; im.onclick = () => showViewer(p.url); d.appendChild(im);
+    d.appendChild(el('small', 'hint', `${PHOTO_KIND[p.kind] || ''}｜${M.userName(p.deleted_by) || ''} ${fmtTime(p.deleted_at)}`));
+    if (cur.status !== 'closed') {
+      const b = el('button', 'btn ghost', '還原'); b.type = 'button';
+      b.onclick = () => guard(b, async () => {
+        const { error } = await sb.from('defect_photos').update({ deleted_at: null }).eq('id', p.id); if (error) throw error;
+        cur.trash.splice(cur.trash.indexOf(p), 1); delete p.deleted_at;
+        (p.kind === 'after' ? cur.after : cur.before).push(p); paintPhotos(); toast('照片已還原');
+      });
+      d.appendChild(b);
+    }
+    box.appendChild(d);
+  });
 }
 function paintSigns() {   // 簽名圖只看不刪（簽認的證據）
   const box = $('sh-signimg'); box.innerHTML = '';
@@ -141,12 +191,13 @@ function photoBox(box, arr, kind) {
   box.innerHTML = '';
   arr.forEach(p => {
     const w = el('div', 'ph' + (p.del ? ' del' : '')); const im = el('img'); im.src = p.url; im.alt = '缺失照片'; w.appendChild(im);
-    const canDel = !p.id || isAdmin() || (p.by === S.user.id && !(isVendor() && kind === 'before'));
+    const canDel = cur.status !== 'closed' && (!p.id || isAdmin() || (p.by === S.user.id && !(isVendor() && kind === 'before')));
     if (p.del) {   // 標記刪除：按「儲存」等動作時才真的刪，之前都能復原
       const u = el('button', 'undo', '待刪除\n點此復原'); u.type = 'button'; u.onclick = () => { p.del = false; paintPhotos(); }; w.appendChild(u);
     } else im.onclick = () => showViewer(p.url, canDel ? () => { p.del = true; paintPhotos(); toast('照片已標記刪除，按「儲存」才會真的刪；按「取消」或點照片可復原'); } : null);
     box.appendChild(w); return;
   });
+  if (cur.status === 'closed') return;   // 已結案不能加照片
   if (isVendor() && (kind === 'before' || cur.status !== 'todo')) return;   // 廠商只能在待修時補修繕後照片
   const lab = el('label'); lab.innerHTML = kind === 'after' ? '＋拍照<br>修繕後' : '＋拍照<br>或選圖';
   const inp = el('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
@@ -194,9 +245,13 @@ async function persist(needFull = true) {
   }
   if (cur.customer_name) { try { sessionStorage.setItem('qc-cust-' + cur.unit_id, cur.customer_name); } catch (e) { /* ignore */ } }
   // 刪除被移除的照片
+  // 刪除被移除的照片：只標記已刪除、檔案保留（21_照片保護.sql）；資料庫還沒更新時照舊真的刪
   for (const p of cur.removed.slice()) {
-    const { error } = await sb.from('defect_photos').delete().eq('id', p.id); if (error) throw error;
-    await removeFiles('photos', [p.path]);
+    const { error } = await sb.from('defect_photos').update({ deleted_at: new Date().toISOString() }).eq('id', p.id);
+    if (error && /deleted_at/.test(errMsg(error))) {
+      const r = await sb.from('defect_photos').delete().eq('id', p.id); if (r.error) throw r.error;
+      await removeFiles('photos', [p.path]);
+    } else if (error) throw error;
     cur.removed.splice(cur.removed.indexOf(p), 1);
   }
   // 上傳新照片
@@ -243,16 +298,26 @@ $('sh-pass').onclick = e => guard(e.currentTarget, async () => {
 $('sh-signgo').onclick = e => guard(e.currentTarget, async () => {
   const blob = await openSignPad(); if (!blob) return;
   await persist();
-  await uploadPhoto(cur.id, 'sign', blob);
+  const ph = await uploadPhoto(cur.id, 'sign', blob);
   await setStatus({ status: 'closed', close_type: cur.close_type || '複驗合格', close_reason: cur.close_reason || null, signed_name: $('sh-signname').value.trim() || null, signed_date: $('sh-signdate').value || today() });
+  await recordSign([cur], cur.signed_name || null, cur.signed_date || today(), ph.path, { [cur.id]: ctx.no });
   done('客戶已簽認，結案');
 });
-$('sh-reopen').onclick = e => guard(e.currentTarget, async () => {
-  await persist(false);
+$('sh-reopen').onclick = e => {
+  if (cur.status === 'closed') { $('sh-reopen-reason').hidden = false; $('sh-reopen-go').hidden = false; $('sh-reopen-reason').focus(); return; }
+  reopen(e.currentTarget);
+};
+$('sh-reopen-go').onclick = e => reopen(e.currentTarget, $('sh-reopen-reason').value.trim());
+const reopen = (b, why) => guard(b, async () => {
+  const wasClosed = cur.status === 'closed';
+  if (wasClosed && !why) throw new Error('請填重新開案的原因');
+  if (!wasClosed) await persist(false);
   const patch = { status: 'todo', close_type: null, close_reason: null, fixed_date: null };
   if ('signed_name' in cur) Object.assign(patch, { signed_name: null, signed_date: null });   // 有執行 7_待簽認.sql 才有這兩欄
-  await setStatus(patch);
-  done('已退回待修');
+  if (wasClosed) patch.reopen_reason = why;
+  try { await setStatus(patch); }
+  catch (er) { if (wasClosed && /reopen_reason/.test(errMsg(er))) throw new Error('資料庫還沒更新，請管理者先執行 20_異動紀錄與結案鎖定.sql'); throw er; }
+  done(wasClosed ? '已重新開案，退回待修' : '已退回待修');
 });
 $('sh-nofix').onclick = () => { $('sh-reason').hidden = false; $('sh-nofix-go').hidden = false; $('sh-reason').focus(); };
 $('sh-nofix-go').onclick = e => guard(e.currentTarget, async () => {
@@ -276,3 +341,48 @@ $('sh-del').onclick = e => {
 };
 const sheetCancel = () => { if (cur) { const cb = ctx.onClose; closeSheet(); if (cb) cb(); } };
 $('sh-cancel').onclick = sheetCancel; $('sh-back').onclick = sheetCancel;
+
+// 修改歷程：每次新增、修改、刪除照片都由資料庫自動記錄（20_異動紀錄與結案鎖定.sql），這裡只讀
+const LOG_FIELDS = {
+  space_id: ['空間別', 'spaces'], category_id: ['工項', 'categories'], item_id: ['缺失內容', 'items'],
+  repair_method_id: ['修繕方式', 'repair_methods'], fix_vendor_id: ['修繕廠商', 'vendors'], resp_vendor_id: ['責任廠商', 'vendors'],
+  inspect_type_id: ['檢查類型', 'inspect_types'], unit_id: ['戶別', 'units'], building_id: ['棟別', 'buildings'], floor: ['樓層'],
+  status: ['狀態'], description: ['缺失說明'], customer_name: ['客戶名稱'], planned_date: ['預計修繕日'], fixed_date: ['修繕完成日'],
+  close_type: ['結案方式'], close_reason: ['不修原因'], reopen_reason: ['重新開案原因'], signed_name: ['簽認人'], signed_date: ['簽認日期'],
+  x: ['位置'], y: ['位置'], plan_id: ['平面圖'],
+};
+const PHOTO_KIND = { before: '修繕前照片', after: '修繕後照片', sign: '簽名' };
+function logValue(k, v) {
+  if (v == null || v === '') return '（空白）';
+  const f = LOG_FIELDS[k];
+  if (k === 'status') return STATUS[v] || v;
+  if (f && f[1]) { const r = M.get(f[1], v); return r ? (r.name || r.code) : `#${v}`; }
+  return String(v);
+}
+function logLine(g) {
+  if (g.action === '新增') return '新增這筆缺失';
+  if (g.action === '刪除') return '刪除這筆缺失';
+  if (/照片$/.test(g.action)) return `${g.action.slice(0, 2)}${PHOTO_KIND[g.changes.kind] || '照片'}`;
+  const parts = []; let moved = false;
+  Object.entries(g.changes).forEach(([k, [a, b]]) => {
+    const f = LOG_FIELDS[k]; if (!f) return;
+    if (k === 'x' || k === 'y' || k === 'plan_id') { if (!moved) parts.push(b == null && k !== 'plan_id' ? '移除圖上位置' : '調整圖上位置'); moved = true; return; }
+    parts.push(`${f[0]}：${logValue(k, a)} → ${logValue(k, b)}`);
+  });
+  return parts.join('；');
+}
+async function paintLog() {
+  const box = $('sh-loglist'), me = cur; box.textContent = '讀取中…';
+  const { data, error } = await sb.from('defect_logs').select('*').eq('defect_id', cur.id).order('at', { ascending: false });
+  if (me !== cur) return;
+  box.innerHTML = '';
+  if (error) { box.appendChild(el('p', 'hint', '還沒有修改歷程（需先執行 20_異動紀錄與結案鎖定.sql）。')); return; }
+  const rows = (data || []).map(g => ({ g, t: logLine(g) })).filter(x => x.t);
+  if (!rows.length) { box.appendChild(el('p', 'hint', '目前沒有修改紀錄。')); return; }
+  rows.forEach(({ g, t }) => {
+    const r = el('div', 'logrow');
+    r.append(el('small', 'hint', `${fmtTime(g.at)}　${M.userName(g.by_user) || '系統'}`), el('div', null, t));
+    box.appendChild(r);
+  });
+}
+$('sh-log').addEventListener('toggle', () => { if ($('sh-log').open && cur && cur.id) paintLog(); });

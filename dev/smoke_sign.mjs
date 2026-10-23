@@ -24,7 +24,7 @@ await page.fill('#l-email', 'staff@x.com'); await page.fill('#l-pass', 'pw'); aw
 await page.waitForSelector('#app:not([hidden])');
 await page.click('#floor .chip:has-text("8F")'); await page.click('#units button:has-text("A1")'); await page.click('#go');
 await page.waitForSelector('#dlist .item');
-ok((await page.textContent('#unitsign')).includes('本戶有 2 筆待簽認'), '整戶簽認區塊顯示 2 筆');
+ok((await page.textContent('#unitsign')).includes('本戶有 2 筆待簽認') && (await page.textContent('#unitsign')).includes('這次簽認涵蓋的 2 筆'), '整戶簽認區塊顯示 2 筆並列出涵蓋項目');
 await page.locator('#dlist .item').nth(0).click(); await page.waitForSelector('#sheet:not([hidden])');
 ok((await page.textContent('#sh-pass')).includes('等客戶簽認'), '②按鈕寫明要等簽認');
 await page.click('#sh-pass'); await page.waitForSelector('#sheet', { state: 'hidden' });
@@ -67,6 +67,12 @@ P = await page.evaluate(() => window.__db.T.defect_photos.filter(p => p.kind ===
 ok(T[1].status === 'closed' && T[2].status === 'closed' && T[2].signed_name === null, '整戶簽認：其餘 2 筆結案（簽認人選填）');
 ok(P.length === 3 && P.includes(2) && P.includes(3), '整戶每筆都存簽名');
 ok(await page.locator('#unitsign').isHidden(), '簽完後整戶簽認區塊消失');
+const SR = await page.evaluate(() => window.__db.T.sign_records || []);
+ok(SR.length === 2 && SR[1].defect_ids.join(',') === '2,3' && SR[1].snapshot.length === 2 && SR[1].sign_path && SR[0].defect_ids.join(',') === '1', '單筆與整戶簽認都留簽認紀錄（涵蓋哪幾筆＋快照）');
+await page.evaluate(() => { const T = window.__db.T; T.sign_records.forEach(r => { r.at = '2026-01-01T00:00:00Z'; }); T.defects.push({ ...T.defects[0], id: 8, status: 'todo', close_type: null, created_at: new Date().toISOString(), description: 'new' }); });
+await page.evaluate(() => renderFill()); await page.waitForTimeout(400);
+ok(await page.isVisible('#resign') && (await page.textContent('#resign')).includes('新增 1 筆'), '簽認後新增缺失會提示要重新簽認');
+await page.evaluate(() => { const T = window.__db.T; T.defects = T.defects.filter(d => d.id !== 8); }); await page.evaluate(() => renderFill()); await page.waitForTimeout(300);
 // 需簽認類型：不修 → 確認 → 待簽認 → 簽名結案，close_type 保持不修
 await page.evaluate(() => { const T = window.__db.T; T.defects.push({ ...T.defects[0], id: 9, status: 'todo', close_type: null, close_reason: null, signed_name: null, description: 'nf' }); });
 await page.click('#go').catch(() => {}); await page.evaluate(() => renderFill()); await page.waitForTimeout(400);
