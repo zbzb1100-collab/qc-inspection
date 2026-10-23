@@ -68,7 +68,7 @@ function listTable(box, o) {
   if (!rows.length) { const tr = el('tr'); const td = el('td', 'empty', '（還沒有項目，在下面新增）'); td.colSpan = span; tr.appendChild(td); tb.appendChild(tr); }
   rows.forEach((r, i) => {
     const tr = el('tr', r.active === false ? 'off' : null); tr.dataset.name = r[nf] ?? '';
-    const nm = el('td', 'nm'); const inp = el('input'); inp.type = 'text'; inp.value = r[nf] ?? ''; inp.title = '點一下就能改名，改完按 Enter';
+    const nm = el('td', 'nm'); const inp = el('input'); inp.type = 'text'; inp.value = r[nf] ?? ''; inp.title = o.readonly ? '' : '點一下就能改名，改完按 Enter'; inp.readOnly = !!o.readonly;
     inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
     inp.onchange = () => adminSave(async () => { const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await q(sb.from(o.table).update({ [nf]: v }).eq('id', r.id)); },
       () => { inp.value = r[nf] ?? ''; }, '已改名');
@@ -101,7 +101,8 @@ function listTable(box, o) {
       };
       tools.appendChild(rm);
     }
-    tools.append(tg, mo); tr.appendChild(tools);
+    if (o.readonly) tools.innerHTML = ''; else tools.append(tg, mo);
+    tr.appendChild(tools);
     cols.forEach(c => { const td = el('td', c.cls || null); const v = c.cell(r); if (v != null) td.append(v); tr.appendChild(td); });
     if (o.detail) {
       const td = el('td'); const open = adminSel['det_' + o.key] === r.id;
@@ -202,6 +203,11 @@ function bldPicker(body, key, blds) {
 const ADMIN_TABS = [['struct', '選戶架構'], ['space', '空間別'], ['cat', '工項與缺失'], ['vendor', '廠商'], ['plan', '平面圖'], ['user', '帳號'], ['batch', '批次匯入'], ['other', '其他']];
 function renderAdmin() {
   const root = $('admin-root'); root.innerHTML = '';
+  if (!isSiteAdmin()) {   // 案管理者切到不是自己管的案場
+    root.appendChild(el('div', 'banner warn', `你不是「${M.name('sites', S.sel.siteId)}」的案管理者，不能改這個案場的設定。請回「查驗」頁上方切換到你負責的案場。`));
+    return;
+  }
+  if (S.m.sites.length > 1) root.appendChild(el('div', 'flow', `正在設定：${M.name('sites', S.sel.siteId)}（改了只影響這個案場${isAdmin() ? '；要設定別的案場，回「查驗」頁上方切換' : ''}）`));
   const tabs = el('div', 'adm-tabs'); tabs.id = 'adm-tabs';
   ADMIN_TABS.forEach(([k, n]) => { const w = k === 'user' ? S.m.profiles.filter(p => p.pending && !p.active).length : 0; const b = el('button', adminTab === k ? 'on' : null, n + (w ? `（${w}）` : '')); b.type = 'button'; b.dataset.tab = k; b.onclick = () => { adminTab = k; renderAdmin(); $('admin-root').closest('main')?.scrollTo(0, 0); }; tabs.appendChild(b); });
   root.appendChild(tabs);
@@ -232,7 +238,7 @@ function tabStruct(root) {
       if (error) throw (/need_sign/.test(error.message) ? new Error('要先到 Supabase 執行 7_待簽認.sql') : error);
     }, back), `${r.name} 複驗後要客戶簽認`) }, ...zoneCols('inspect_types', r => r.name)];
     listTable(body, { key: 'inspect_types', table: 'inspect_types', zoned: true, rows: M.list('inspect_types', false).filter(r => M.inZone(r, zid)), cols,
-      onAdd: names => q(sb.from('inspect_types').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.inspect_types) + i, ...zoneNew() })))),
+      onAdd: names => q(sb.from('inspect_types').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.inspect_types) + i, ...zoneNew(), ...siteRow() })))),
       placeholder: '新增檢查類型' }); }
 
   // 棟別與樓層
@@ -304,7 +310,7 @@ function tabSpace(root) {
         for (const m of S.m.unit_spaces.filter(m => m.space_id === a.id && !have.has(m.unit_id))) await q(sb.from('unit_spaces').insert({ unit_id: m.unit_id, space_id: b.id }));
       } },
       onAdd: names => { const dup = names.filter(n => allSp.some(sp => sp.name === n)); if (dup.length) throw new Error('「' + dup.join('、') + '」另一區已經有了，請切到那一區，在它那一列勾「也用」');
-        return q(sb.from('spaces').insert(names.map((n, k) => ({ inspect_type_id: typeId, name: n, code: '', sort: nextSort(allSp) + k, ...(zid && !S.noSpaceZones ? { zone_ids: [zid] } : {}) })))); },
+        return q(sb.from('spaces').insert(names.map((n, k) => ({ ...siteRow(), inspect_type_id: typeId, name: n, code: '', sort: nextSort(allSp) + k, ...(zid && !S.noSpaceZones ? { zone_ids: [zid] } : {}) })))); },
       placeholder: '新增空間別，例：玄關、主臥' }); }
 
   // 每戶有哪些空間：列＝戶別，欄＝空間別
@@ -364,18 +370,20 @@ function tabCat(root) {
   listTable(body, { key: 'cat', table: 'categories', zoned: true, rows: M.list('categories', false).filter(c => M.inZone(c, zid)), cols: [
       { head: '預設廠商', cls: 'left', cell: c => el('span', 'hint', M.vendorsOfCat(c.id).map(v => v.name).join('、') || '—') }, ...zoneCols('categories', r => r.name)],
     detail, detailLabel: c => `缺失內容 ${S.m.items.filter(i => i.category_id === c.id && i.active !== false && M.itemIn(i, zid)).length}`,
-    onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew() })))),
+    onAdd: names => q(sb.from('categories').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.categories) + i, ...zoneNew(), ...siteRow() })))),
     placeholder: '新增工項，例：木地板工程' });
 }
 
 // ---------- 廠商、修繕方式 ----------
 function tabVendor(root) {
-  { const body = section(root, '廠商', '填寫時的「修繕廠商」「責任廠商」；請用全名', 'sec-vendor');
-    listTable(body, { key: 'vendor', table: 'vendors', sortable: false, cols: [{ head: '是哪些工項的預設廠商', cls: 'left', cell: v => el('span', 'hint',
+  { const body = section(root, '廠商', '全公司共用一份名單；填寫時的「修繕廠商」「責任廠商」，請用全名', 'sec-vendor');
+    if (!isAdmin()) body.appendChild(el('div', 'banner', '廠商名單是全公司共用的，你可以新增；改名、停用、合併、刪除請找總管理者。'));
+    listTable(body, { key: 'vendor', table: 'vendors', sortable: false, readonly: !isAdmin(), cols: [{ head: '這個案場哪些工項預設這家', cls: 'left', cell: v => el('span', 'hint',
         S.m.category_vendors.filter(m => m.vendor_id === v.id).map(m => M.name('categories', m.category_id)).filter(Boolean).join('、') || '—') }],
       merge: { refs: [['defects', 'fix_vendor_id'], ['defects', 'resp_vendor_id']], extra: async (a, b) => {
-        const have = new Set(S.m.category_vendors.filter(m => m.vendor_id === b.id).map(m => m.category_id));
-        for (const m of S.m.category_vendors.filter(m => m.vendor_id === a.id && !have.has(m.category_id)))
+        const all = S.all.category_vendors || S.m.category_vendors;   // 每個案場的預設廠商都要跟著改
+        const have = new Set(all.filter(m => m.vendor_id === b.id).map(m => m.category_id));
+        for (const m of all.filter(m => m.vendor_id === a.id && !have.has(m.category_id)))
           await q(sb.from('category_vendors').insert({ category_id: m.category_id, vendor_id: b.id, sort: m.sort }));
         await q(sb.from('category_vendors').delete().eq('vendor_id', a.id));
       } }, rows: M.list('vendors', false).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant')),
@@ -383,12 +391,13 @@ function tabVendor(root) {
       placeholder: '新增廠商全名', hint: '要指定某個工項預設哪家廠商，到「工項與缺失」分頁按該工項的「缺失內容」。' }); }
   { const body = section(root, '修繕方式', '填寫時的「修繕方式」按鈕，例：修補、更換', 'sec-method');
     listTable(body, { key: 'repair_methods', table: 'repair_methods', rows: M.list('repair_methods', false), merge: { refs: [['defects', 'repair_method_id']] },
-      onAdd: names => q(sb.from('repair_methods').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.repair_methods) + i })))), placeholder: '新增修繕方式' }); }
+      onAdd: names => q(sb.from('repair_methods').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.repair_methods) + i, ...siteRow() })))), placeholder: '新增修繕方式' }); }
 }
 
 // ---------- 其他：案場、專有戶／公設 ----------
 function tabOther(root) {
-  { const body = section(root, '案場', '有多個案場時，選戶畫面最上面的選單', 'sec-site');
+  if (!isAdmin()) { root.appendChild(el('div', 'banner', '案場和「專有戶／公設」是全公司共用的設定，請找總管理者修改。')); return; }
+  { const body = section(root, '案場', '有多個案場時，選戶畫面最上面的選單。新案場的清單是空的：到「查驗」頁上方切到新案場，再到「批次匯入」匯入設定 Excel（可先從別的案場匯出一份來改）', 'sec-site');
     listTable(body, { key: 'sites', table: 'sites', rows: M.list('sites', false),
       onAdd: names => q(sb.from('sites').insert(names.map((n, i) => ({ name: n, sort: nextSort(S.m.sites) + i })))), placeholder: '新增案場' }); }
   { const body = section(root, '專有戶／公設', '選戶畫面選完案場後的第一排按鈕；右邊可改這一區的「戶別」叫什麼', 'sec-zone');
@@ -539,11 +548,15 @@ function renderUserAdmin(root) {
   const wait = S.m.profiles.filter(p => p.pending && !p.active);
   if (wait.length) g.body.appendChild(el('div', 'banner warn', `待開通 ${wait.length} 個：${wait.map(p => p.name || p.email).join('、')}。確認是自己人再開通；不認識的不要開。`));
   const list = el('div', 'sublist'); g.body.appendChild(list);
-  S.m.profiles.slice().sort((a, b) => !!(b.pending && !b.active) - !!(a.pending && !a.active) || (a.created_at || '').localeCompare(b.created_at || '')).forEach(p => {
+  // 案管理者只看得到待開通的人和自己案場的人；總管理者看得到全部
+  const mySites = M.list('sites', false).filter(st => isAdmin() || isSiteAdmin(st.id));
+  if (!isAdmin()) g.body.insertBefore(el('div', 'banner', `你是 ${mySites.map(x => x.name).join('、')} 的案管理者：可以開通申請的帳號、把人加進或移出你的案場。要設定管理者、案管理者，或改也在其他案場的人，請找總管理者。`), list);
+  const inMine = p => isAdmin() || (p.pending && !p.active) || S.m.user_sites.some(x => x.user_id === p.id && mySites.some(st => st.id === x.site_id));
+  S.m.profiles.filter(inMine).slice().sort((a, b) => !!(b.pending && !b.active) - !!(a.pending && !a.active) || (a.created_at || '').localeCompare(b.created_at || '')).forEach(p => {
     const self = p.id === S.user.id;
     const r = el('div', 'r'); const nm = el('input'); nm.type = 'text'; nm.value = p.name || ''; nm.placeholder = '顯示名稱'; nm.style.flex = '1'; nm.style.minWidth = '110px';
     const em = el('span', 'hint', (p.pending && !p.active ? '🆕 待開通　' : '') + (p.email || '')); em.style.width = '100%';
-    const role = el('select'); [['user', '一般'], ['admin', '管理者'], ['vendor', '廠商']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; role.appendChild(o); }); role.value = p.role; role.style.width = 'auto';
+    const role = el('select'); [['user', '一般'], ...(isAdmin() || p.role === 'admin' ? [['admin', '總管理者']] : []), ['vendor', '廠商']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; role.appendChild(o); }); role.value = p.role; role.style.width = 'auto';
     const ven = el('select'); fillSelect(ven, M.list('vendors'), p.vendor_id, '（選哪家廠商）'); ven.style.width = 'auto'; ven.hidden = p.role !== 'vendor';
     // 同一批人用不同公司名接案：主要公司之外可以再加其他公司名（26_廠商帳號多家公司.sql）
     const extra = new Set(S.m.user_vendors.filter(x => x.user_id === p.id).map(x => x.vendor_id));
@@ -562,18 +575,31 @@ function renderUserAdmin(root) {
     role.onchange = () => { ven.hidden = role.value !== 'vendor'; paintVen(); };
     ven.addEventListener('change', paintVen); paintVen();
     const lab = el('label', 'hint'); const ck = el('input'); ck.type = 'checkbox'; ck.checked = p.active; lab.append(ck, document.createTextNode(' 啟用'));
-    if (self) { role.disabled = true; ck.disabled = true; }
-    // 可用案場（23_案場權限.sql）：管理者看得到全部；其他人只看得到勾選的
-    const sitesBox = el('div', 'row'); sitesBox.style.width = '100%'; sitesBox.style.gap = '4px 12px';
-    const siteCks = [];
+    if (self || (!isAdmin() && p.role === 'admin')) { role.disabled = true; ck.disabled = true; nm.disabled = true; }
+    // 可用案場（23_案場權限.sql）：總管理者看得到全部；其他人只看得到勾選的。
+    // 每個案場旁邊的「案管理者」只有總管理者能勾（27_清單各案場一份與案管理者.sql）
+    const sitesBox = el('div', 'row'); sitesBox.style.width = '100%'; sitesBox.style.gap = '4px 16px';
+    const siteCks = [], admCks = [], hasSiteAdm = S.m.user_sites.some(x => 'is_admin' in x) || !S.m.user_sites.length;
     if (!S.noUserSites && S.m.sites.length) {
       sitesBox.appendChild(el('span', 'hint', '可用案場：'));
-      const mine = new Set(S.m.user_sites.filter(x => x.user_id === p.id).map(x => x.site_id));
-      M.list('sites', false).forEach(st => {
+      const rows = S.m.user_sites.filter(x => x.user_id === p.id), mine = new Set(rows.map(x => x.site_id));
+      mySites.forEach(st => {
         const l = el('label', 'hint'); const c = el('input'); c.type = 'checkbox'; c.checked = mine.has(st.id); c.dataset.site = st.id;
-        l.append(c, document.createTextNode(' ' + st.name)); sitesBox.appendChild(l); siteCks.push(c);
+        l.append(c, document.createTextNode(' ' + st.name)); siteCks.push(c);
+        const w = el('span', 'site-pick'); w.appendChild(l);
+        if (hasSiteAdm) {
+          const al = el('label', 'hint'); const a = el('input'); a.type = 'checkbox'; a.dataset.siteadm = st.id;
+          a.checked = rows.some(x => x.site_id === st.id && x.is_admin); al.append(a, document.createTextNode('案管理者')); al.title = '可以改這個案場的後台設定';
+          admCks.push(a); w.appendChild(al);
+          c.addEventListener('change', () => { if (!c.checked) a.checked = false; paintSites(); });
+          a.addEventListener('change', () => { if (a.checked) c.checked = true; });
+        }
+        sitesBox.appendChild(w);
       });
-      const paintSites = () => { const a = role.value === 'admin'; siteCks.forEach(c => { c.disabled = a; }); sitesBox.title = a ? '管理者看得到全部案場' : ''; };
+      const paintSites = () => {
+        const a = role.value === 'admin'; siteCks.forEach(c => { c.disabled = a || (self && !isAdmin()); }); sitesBox.title = a ? '總管理者看得到全部案場' : '';
+        admCks.forEach(x => { x.parentNode.hidden = role.value !== 'user'; x.disabled = !isAdmin() || !siteCks.find(c => c.dataset.site === x.dataset.siteadm).checked; });
+      };
       role.addEventListener('change', paintSites); paintSites();
       if (p.pending && !p.active && !mine.size) { const c = siteCks.find(c => Number(c.dataset.site) === S.sel.siteId) || siteCks[0]; if (c) c.checked = true; }   // 待開通：預設勾目前案場
     }
@@ -582,15 +608,24 @@ function renderUserAdmin(root) {
       const patch = { name: nm.value.trim(), role: role.value, active: ck.checked };
       if (p.pending && ck.checked) patch.pending = false;   // 開通了就不再是待開通
       if (role.value === 'vendor' || p.vendor_id != null) patch.vendor_id = role.value === 'vendor' ? Number(ven.value) : null;
-      if (siteCks.length && ck.checked && role.value !== 'admin' && !siteCks.some(c => c.checked)) throw new Error('請至少勾一個可用案場，不然他登入後什麼都看不到');
-      const { error } = await sb.from('profiles').update(patch).eq('id', p.id);
-      if (error) throw (/profiles_role_check|vendor_id/.test(error.message) ? new Error('要先到 Supabase 執行 6_廠商帳號.sql，才能設定廠商帳號') : error);
+      if (siteCks.length && ck.checked && role.value !== 'admin' && !siteCks.some(c => c.checked) && (isAdmin() || p.pending)) throw new Error('請至少勾一個可用案場，不然他登入後什麼都看不到');
+      const changed = patch.name !== (p.name || '') || patch.role !== p.role || patch.active !== p.active || 'pending' in patch || ('vendor_id' in patch && patch.vendor_id !== p.vendor_id);
+      if (changed && !self) {
+        const { data, error } = await sb.from('profiles').update(patch).eq('id', p.id).select('id');
+        if (error) throw (/profiles_role_check|vendor_id/.test(error.message) ? new Error('要先到 Supabase 執行 6_廠商帳號.sql，才能設定廠商帳號') : error);
+        if (data && !data.length) throw new Error('這個人也在其他案場，名稱、角色、啟用要請總管理者改；你可以只調整你案場的勾選');
+      } else if (changed) await q(sb.from('profiles').update({ name: patch.name }).eq('id', p.id));
       if (siteCks.length) {
         const had = new Set(S.m.user_sites.filter(x => x.user_id === p.id).map(x => x.site_id));
         const add = siteCks.filter(c => c.checked && !had.has(Number(c.dataset.site))).map(c => ({ user_id: p.id, site_id: Number(c.dataset.site) }));
         const del = siteCks.filter(c => !c.checked && had.has(Number(c.dataset.site))).map(c => Number(c.dataset.site));
         if (add.length) await q(sb.from('user_sites').insert(add));
         if (del.length) await q(sb.from('user_sites').delete().eq('user_id', p.id).in('site_id', del));
+        if (isAdmin()) for (const a of admCks) {
+          const sid = Number(a.dataset.siteadm), on = a.checked && role.value === 'user' && siteCks.find(c => Number(c.dataset.site) === sid).checked;
+          const was = S.m.user_sites.some(x => x.user_id === p.id && x.site_id === sid && x.is_admin);
+          if (on !== was && (on || had.has(sid)) && !del.includes(sid)) await q(sb.from('user_sites').update({ is_admin: on }).eq('user_id', p.id).eq('site_id', sid));
+        }
       }
       if (!S.noUserVendors) {
         const want = new Set(role.value === 'vendor' ? [...extra].filter(id => id !== Number(ven.value)) : []);

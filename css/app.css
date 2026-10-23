@@ -439,3 +439,4 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .nextstep{display:block;width:100%;text-align:left;border:1px solid var(--accent);background:var(--surface2);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:16px;cursor:pointer}
 .nextstep b{color:var(--accent)}
 .photos .ph.gone .undo{color:var(--muted);border-color:var(--muted)}
+.site-pick{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:2px 8px}

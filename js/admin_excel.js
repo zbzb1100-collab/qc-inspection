@@ -156,17 +156,18 @@ function xlCompute(stage, data, pend) {
   switch (stage) {
     case 'itype': return xlStage('檢查類型', 'inspect_types', rowsOf('itype'), { scope: () => S.m.inspect_types.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.itype.has(e.id), row: r => {
       const n = need(r, '檢查類型'), ex = S.m.inspect_types.find(t => t.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
-      return { k: n, nm: n, ex, base: { sort: ns('it', S.m.inspect_types), active: true }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('itype', r) } };
+      return { k: n, nm: n, ex, base: { sort: ns('it', S.m.inspect_types), active: true, ...siteRow() }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('itype', r) } };
     } });
     case 'method': return xlStage('修繕方式', 'repair_methods', rowsOf('method'), { scope: () => S.m.repair_methods.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.method.has(e.id), row: r => {
       const n = need(r, '修繕方式'), ex = S.m.repair_methods.find(t => t.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
-      return { k: n, nm: n, ex, base: { sort: ns('rm', S.m.repair_methods), active: true }, want: { name: n, sort: s, active: a } };
+      return { k: n, nm: n, ex, base: { sort: ns('rm', S.m.repair_methods), active: true, ...siteRow() }, want: { name: n, sort: s, active: a } };
     } });
     case 'vendor': {
       const rows = rowsOf('vendor');
-      return xlStage('廠商', 'vendors', rows, { scope: () => S.m.vendors.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.vendor.has(e.id), row: r => {
+      // 廠商名單全公司共用：完整同步不刪也不停用（別的案場可能在用）；停用／啟用只有總管理者能改
+      return xlStage('廠商', 'vendors', rows, { row: r => {
         const n = need(r, '廠商'), ex = S.m.vendors.find(t => t.name === n), a = xlActive(r['狀態']);
-        return { k: n, nm: n, ex, base: { active: true }, want: { name: n, active: a } };
+        return { k: n, nm: n, ex, base: { active: true }, want: isAdmin() ? { name: n, active: a } : { name: n } };
       } });
     }
     case 'bld': return xlStage('棟別樓層', 'buildings', rowsOf('bld'), { scope: () => bldRows().filter(inScope('bld')).map(e => ({ ex: e, k: xlBKey(xlZoneName(e), e.name), nm: xlBKey(xlZoneName(e), e.name) })), used: e => XL_USE.bld.has(e.id), row: r => {
@@ -192,12 +193,12 @@ function xlCompute(stage, data, pend) {
       // 空間別用「區分」（專有戶／公設）分，不再綁檢查類型；舊檔的「檢查類型」欄略過
       const n = need(r, '空間別'), ex = S.m.spaces.find(x => x.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
       const typeId = (S.m.spaces[0] || {}).inspect_type_id || (S.m.inspect_types[0] || {}).id;   // 舊欄位，資料庫還要求有值
-      return { k: n, nm: n, ex, base: { inspect_type_id: typeId, code: '', sort: ns('s', S.m.spaces), active: true },
+      return { k: n, nm: n, ex, base: { inspect_type_id: typeId, code: '', sort: ns('s', S.m.spaces), active: true, ...siteRow() },
         want: { name: n, code: r['圖面代號'] === '' ? undefined : r['圖面代號'], sort: s, active: a, zone_ids: S.noSpaceZones ? undefined : zoneIds('space', r) } };
     } });
     case 'cat': return xlStage('工項', 'categories', rowsOf('cat'), { scope: () => S.m.categories.map(e => ({ ex: e, k: e.name, nm: e.name })), used: e => XL_USE.cat.has(e.id), row: r => {
       const n = need(r, '工項'), ex = S.m.categories.find(c => c.name === n), s = xlSort(r['排序']), a = xlActive(r['狀態']);
-      return { k: n, nm: n, ex, base: { sort: ns('c', S.m.categories), active: true }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('cat', r) } };
+      return { k: n, nm: n, ex, base: { sort: ns('c', S.m.categories), active: true, ...siteRow() }, want: { name: n, sort: s, active: a, zone_ids: zoneIds('cat', r) } };
     } });
     case 'item': {
       if (S.noItemZones) return xlStage('缺失內容', 'items', rowsOf('item'), { scope: () => S.m.items.map(e => ({ ex: e, k: M.name('categories', e.category_id) + '|' + e.name, nm: M.name('categories', e.category_id) + ' ／ ' + e.name })), used: e => XL_USE.item.has(e.id), row: r => {
@@ -345,7 +346,7 @@ function renderExcelAdmin(root) {
   sl.append(sc, document.createTextNode(' 完整同步：Excel 裡沒有的項目也處理（沒用過的刪除，用過的改成停用，舊紀錄保留；匯入前自動下載一份備份）'));
   g.body.appendChild(sl);
   const out = el('div', 'stack'); out.id = 'xl-out'; g.body.appendChild(out);
-  const hist = el('div'); g.body.appendChild(hist); if (isAdmin()) xlShowLogs(hist);
+  const hist = el('div'); g.body.appendChild(hist); if (isSiteAdmin()) xlShowLogs(hist);
   let data = null;
 
   async function showPreview() {

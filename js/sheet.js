@@ -3,6 +3,8 @@ let cur = null, ctx = null;
 
 async function openDefect(row, c) {
   ctx = c || {};
+  // 從報表點開別的案場的缺失：清單換成那個案場的（各案場一份）
+  if (row && row.site_id && row.site_id !== S.sel.siteId && typeof applySite === 'function') { S.sel.siteId = row.site_id; applySite(); if (typeof saveSel === 'function') saveSel(); }
   const base = row ? { ...row } : {
     ...ctx.create, status: 'todo', space_id: null, category_id: null, item_id: null,
     repair_method_id: null, fix_vendor_id: null, resp_vendor_id: null,
@@ -58,12 +60,12 @@ function paintSheet() {
   $('sh-sign').hidden = st2 !== 'signing';
   $('sh-signname').value = cur.signed_name || ''; $('sh-signdate').value = cur.signed_date || today();
   $('sh-nofix').hidden = st2 !== 'todo';
-  $('sh-reopen').hidden = !(st2 === 'fixed' || st2 === 'signing' || (st2 === 'closed' && isAdmin()));
+  $('sh-reopen').hidden = !(st2 === 'fixed' || st2 === 'signing' || (st2 === 'closed' && isSiteAdmin(cur.site_id)));
   $('sh-reopen').textContent = st2 === 'closed' ? '重新開案（要填原因）' : '複驗不合格／客戶不認可，退回待修';
   $('sh-reopen-reason').hidden = true; $('sh-reopen-go').hidden = true; $('sh-reopen-reason').value = '';
   $('sh-fixdate-wrap').hidden = !(st2 === 'todo' || (st2 === 'fixed' && !nf));
   paintStatusText();
-  $('sh-del').hidden = isNew || !isAdmin() || st2 === 'closed'; $('sh-del').textContent = '刪除';
+  $('sh-del').hidden = isNew || !isSiteAdmin(cur.site_id) || st2 === 'closed'; $('sh-del').textContent = '刪除';
   $('sh-save').hidden = st2 === 'closed';
   $('sh-trail').textContent = isNew ? '' :
     `建立：${M.userName(cur.created_by)} ${fmtTime(cur.created_at)}　最後修改：${M.userName(cur.updated_by) || M.userName(cur.created_by)} ${fmtTime(cur.updated_at)}` +
@@ -116,7 +118,7 @@ function paintLock() {
   $('sheet').querySelector('.panel').querySelectorAll('.chip, #sh-cust, #sh-date, #sh-desc, #sh-fixvendor-other, #sh-vendor').forEach(x => { x.disabled = true; });
   $('sh-placerow').hidden = true;
   $('sh-closeinfo').textContent = '已結案，資料已鎖定。' + $('sh-closeinfo').textContent.replace(/^已結案：/, '結案方式：') +
-    (isAdmin() ? '　要修改請按「重新開案」並填原因。' : '　要修改請找管理者重新開案。');
+    (isSiteAdmin(cur.site_id) ? '　要修改請按「重新開案」並填原因。' : '　要修改請找管理者重新開案。');
 }
 // 廠商帳號：缺失內容只能看；只能填修繕完成日、拍修繕後照片、按修繕完成
 function paintVendorMode() {
@@ -191,13 +193,13 @@ function photoBox(box, arr, kind) {
   box.innerHTML = '';
   arr.forEach(p => {
     const w = el('div', 'ph' + (p.del ? ' del' : '')); const im = el('img'); im.src = p.url; im.alt = '缺失照片'; w.appendChild(im);
-    const canDel = cur.status !== 'closed' && (!p.id || isAdmin() || (p.by === S.user.id && !(isVendor() && kind === 'before')));
+    const canDel = cur.status !== 'closed' && (!p.id || isSiteAdmin(cur.site_id) || (p.by === S.user.id && !(isVendor() && kind === 'before')));
     if (p.del) {   // 標記刪除：按「儲存」等動作時才真的刪，之前都能復原
       const u = el('button', 'undo', '待刪除\n點此復原'); u.type = 'button'; u.onclick = () => { p.del = false; paintPhotos(); }; w.appendChild(u);
     } else im.onclick = () => showViewer(p.url, canDel ? () => { p.del = true; paintPhotos(); toast('照片已標記刪除，按「儲存」才會真的刪；按「取消」或點照片可復原'); } : null);
     box.appendChild(w); return;
   });
-  if (isAdmin()) cur.trash.filter(p => (p.kind === 'after') === (kind === 'after')).forEach(p => trashTile(box, p));
+  if (isSiteAdmin(cur.site_id)) cur.trash.filter(p => (p.kind === 'after') === (kind === 'after')).forEach(p => trashTile(box, p));
   if (cur.status === 'closed') return;   // 已結案不能加照片
   if (isVendor() && (kind === 'before' || cur.status !== 'todo')) return;   // 廠商只能在待修時補修繕後照片
   const lab = el('label'); lab.innerHTML = kind === 'after' ? '＋拍照<br>修繕後' : '＋拍照<br>或選圖';

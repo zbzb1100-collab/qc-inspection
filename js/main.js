@@ -69,8 +69,8 @@ async function enter(user) {
   S.sel = loadSel(); normalizeSel();
   $('login').hidden = true; $('app').hidden = false;
   $('userbtn').textContent = S.profile.name || S.profile.email || '我';
-  $('t-admin').hidden = !isAdmin();
-  { const w = isAdmin() ? S.m.profiles.filter(p => p.pending && !p.active).length : 0; if (w) setTimeout(() => toast(`有 ${w} 個帳號申請等你開通（管理 → 帳號）`), 600); }
+  $('t-admin').hidden = !isAnySiteAdmin();
+  { const w = isAnySiteAdmin() ? S.m.profiles.filter(p => p.pending && !p.active).length : 0; if (w) setTimeout(() => toast(`有 ${w} 個帳號申請等你開通（管理 → 帳號）`), 600); }
   $('t-jobs').hidden = isVendor();
   show(isVendor() ? 'report' : 'pick');   // 廠商一進來就看自己的缺失清單
 }

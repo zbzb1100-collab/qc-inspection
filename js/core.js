@@ -18,11 +18,22 @@ const S = {
   sel: {},           // 選戶畫面的選擇
   unitDefects: [],   // 目前這戶的缺失
 };
-const isAdmin = () => S.profile && S.profile.role === 'admin' && S.profile.active;
+const isAdmin = () => S.profile && S.profile.role === 'admin' && S.profile.active;   // 總管理者：所有案場
+// 案管理者：帳號頁在這個案場勾了「案管理者」（27_清單各案場一份與案管理者.sql）
+const isSiteAdmin = (sid = S.sel.siteId) => isAdmin() || (!!S.profile && S.profile.role === 'user' && S.profile.active &&
+  (S.m.user_sites || []).some(u => u.user_id === S.user.id && u.site_id === sid && u.is_admin));
+const isAnySiteAdmin = () => isAdmin() || (!!S.profile && S.profile.role === 'user' && S.profile.active &&
+  (S.m.user_sites || []).some(u => u.user_id === S.user.id && u.is_admin));
 const isVendor = () => !!S.profile && S.profile.role === 'vendor';   // 廠商帳號：只看自己的缺失、只能回報修繕完成
 
 const MASTER_TABLES = ['sites', 'inspect_types', 'buildings', 'units', 'spaces', 'categories', 'items',
   'vendors', 'category_vendors', 'repair_methods', 'plans', 'plan_spaces', 'profiles'];
+// 各案場一份的清單：S.all 放全部，S.m 只放目前案場的（還沒執行 27 時沒有 site_id，就全部都算）
+const SITE_TABLES = ['inspect_types', 'spaces', 'categories', 'items', 'category_vendors', 'repair_methods'];
+function applySite() {
+  SITE_TABLES.forEach(t => { S.m[t] = (S.all[t] || []).filter(r => r.site_id == null || r.site_id === S.sel.siteId); });
+}
+const siteRow = () => (S.all.categories || []).some(r => 'site_id' in r) || (S.all.inspect_types || []).some(r => 'site_id' in r) ? { site_id: S.sel.siteId } : {};
 
 async function loadMaster() {
   const res = await Promise.all(MASTER_TABLES.map(n => sb.from(n).select('*')));
@@ -30,6 +41,8 @@ async function loadMaster() {
     if (r.error) throw new Error(MASTER_TABLES[i] + '：' + r.error.message);
     S.m[MASTER_TABLES[i]] = r.data || [];
   });
+  S.all = {}; SITE_TABLES.forEach(t => { S.all[t] = S.m[t]; });
+  applySite();
   // 每戶空間別（新增的表；還沒建表時不要讓整個系統壞掉）
   const us = await sb.from('unit_spaces').select('*');
   S.m.unit_spaces = us.error ? [] : (us.data || []); S.noUnitSpaces = !!us.error;
@@ -42,14 +55,14 @@ async function loadMaster() {
   // 專有戶／公設（12_專有公設.sql；還沒執行時就當作只有一區，畫面跟以前一樣）
   const zs = await sb.from('zones').select('*');
   S.m.zones = zs.error ? [] : (zs.data || []); S.noZones = !!zs.error;
-  S.noSpaceZones = S.noZones || (S.m.spaces.length > 0 && !('zone_ids' in S.m.spaces[0]));   // 16_空間別分區.sql 還沒執行
-  S.noItemZones = S.noZones || (S.m.items.length > 0 && !('zone_id' in S.m.items[0]));       // 18_缺失內容各區一份.sql 還沒執行
+  S.noSpaceZones = S.noZones || (S.all.spaces.length > 0 && !('zone_ids' in S.all.spaces[0]));   // 16_空間別分區.sql 還沒執行
+  S.noItemZones = S.noZones || (S.all.items.length > 0 && !('zone_id' in S.all.items[0]));       // 18_缺失內容各區一份.sql 還沒執行
 }
 const bySort = (a, b) => (a.sort ?? 0) - (b.sort ?? 0) || String(a.name ?? a.code ?? '').localeCompare(String(b.name ?? b.code ?? ''), 'zh-Hant', { numeric: true });
 const act = rows => rows.filter(r => r.active !== false);
 const M = {
   list: (t, onlyActive = true) => (onlyActive ? act(S.m[t]) : S.m[t]).slice().sort(bySort),
-  get: (t, id) => S.m[t].find(r => r.id === id),
+  get: (t, id) => S.m[t].find(r => r.id === id) || (S.all && S.all[t] ? S.all[t].find(r => r.id === id) : undefined),
   name: (t, id) => { const r = M.get(t, id); return r ? (r.name ?? r.code) : ''; },
   unitCode: id => { const u = M.get('units', id); return u ? u.code : ''; },
   userName: id => { const p = S.m.profiles.find(p => p.id === id); return p ? (p.name || p.email || '') : ''; },

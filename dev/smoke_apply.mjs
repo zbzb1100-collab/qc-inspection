@@ -47,7 +47,7 @@ await page.click('#adm-tabs button[data-tab=user]');
 ok((await page.textContent('#admin-root')).includes('待開通 1 個：王小明'), '帳號頁列出待開通');
 const row = page.locator('.sublist .r').first();
 ok((await row.locator('input[type=text]').inputValue()) === '王小明', '待開通排最上面');
-await row.locator('input[type=checkbox]:not([data-site])').check(); await row.locator('button:has-text("儲存")').click(); await page.waitForTimeout(400);
+await row.locator('input[type=checkbox]:not([data-site]):not([data-siteadm])').check(); await row.locator('button:has-text("儲存")').click(); await page.waitForTimeout(400);
 const np2 = await page.evaluate(() => window.__db.T.profiles.find(p => p.email === 'new@x.com'));
 ok(np2.active === true && np2.pending === false, '勾啟用儲存＝開通');
 ok(!errors.length, 'JS 錯誤：' + errors.join(' | '));

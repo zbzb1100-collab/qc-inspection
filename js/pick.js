@@ -7,6 +7,7 @@ function normalizeSel() {
   const s = S.sel;
   const sites = M.list('sites');
   if (!sites.find(x => x.id === s.siteId)) s.siteId = sites[0] && sites[0].id;
+  applySite();   // 清單換成這個案場的
   const zones = M.list('zones');
   if (!zones.find(x => x.id === s.zoneId)) s.zoneId = zones[0] ? zones[0].id : null;
   const types = M.typesOf(s.zoneId);

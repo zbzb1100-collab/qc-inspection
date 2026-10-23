@@ -61,10 +61,12 @@ def lists_for(api, job):
     g = lambda t, q='select=*': api.rest('GET', f'{t}?{q}')
     act = lambda rows: sorted([r for r in rows if r.get('active', True) is not False], key=lambda r: (r.get('sort') or 0, str(r.get('name') or r.get('code'))))
     blds = act(g('buildings', f'select=*&site_id=eq.{job["site_id"]}'))
-    units = act(g('units')); cats = act(g('categories')); items = act(g('items')); vendors = act(g('vendors'))
-    cv = sorted(g('category_vendors'), key=lambda r: r.get('sort') or 0)
+    # 清單各案場一份（27）：只取這份報告所在案場的；還沒執行 27 時沒有 site_id，全部都算
+    mine = lambda rows: [r for r in rows if r.get('site_id') in (None, job['site_id'])]
+    units = act(g('units')); cats = act(mine(g('categories'))); items = act(mine(g('items'))); vendors = act(g('vendors'))
+    cv = sorted(mine(g('category_vendors')), key=lambda r: r.get('sort') or 0)
     vname = {v['id']: v['name'] for v in vendors}
-    spaces = act(g('spaces'))
+    spaces = act(mine(g('spaces')))
     try: us = g('unit_spaces', f'select=space_id&unit_id=eq.{job["unit_id"]}')
     except SystemExit: us = []
     # 專有戶／公設：只列這一戶所在區的棟別、空間別、檢查類型、工項、缺失內容（缺失內容各區一份）
@@ -87,8 +89,8 @@ def lists_for(api, job):
         'cats': [{'name': c['name'], 'items': [i['name'] for i in items if i['category_id'] == c['id']],
                   'vendors': [vname[r['vendor_id']] for r in cv if r['category_id'] == c['id'] and r['vendor_id'] in vname] or None} for c in cats],
         'vendors': [v['name'] for v in vendors],
-        'methods': [m['name'] for m in act(g('repair_methods'))],
-        'types': [t['name'] for t in act(g('inspect_types')) if inz(t)],
+        'methods': [m['name'] for m in act(mine(g('repair_methods')))],
+        'types': [t['name'] for t in act(mine(g('inspect_types'))) if inz(t)],
     }
 
 

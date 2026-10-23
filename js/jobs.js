@@ -92,7 +92,7 @@ function jobCard(j, listBox, pick) {
   const top = el('div', 'row'); top.style.alignItems = 'center';
   const t = el('b', null, `${M.name('buildings', j.building_id)} ${j.floor || ''} ${(M.get('units', j.unit_id) || {}).code || ''}　${M.name('inspect_types', j.inspect_type_id)}`); t.style.flex = '1';
   const st = el('span', 'status ' + ({ done: 'fixed', imported: 'closed', error: 'todo' }[j.status] || 'signing'), JOB_ST[j.status] || j.status);
-  if (pick && isAdmin() && j.status === 'pending') {
+  if (pick && isSiteAdmin(j.site_id) && j.status === 'pending') {
     const cb = el('input'); cb.type = 'checkbox'; cb.dataset.urgent = j.id; cb.style.width = cb.style.height = '1.4em';
     cb.onchange = () => { cb.checked ? pick.add(j.id) : pick.delete(j.id); const b = document.getElementById('job-urgent'); if (b) b.update(); };
     top.appendChild(cb);
@@ -112,7 +112,7 @@ function jobCard(j, listBox, pick) {
   if (j.status === 'error') btn('重新排隊', 'btn ghost', async () => {
     const { error } = await sb.from('report_jobs').update({ status: 'pending', message: null }).eq('id', j.id); if (error) throw error; await drawJobs(listBox);
   });
-  if (j.status !== 'processing' && (isAdmin() || j.created_by === S.user.id)) {
+  if (j.status !== 'processing' && (isSiteAdmin(j.site_id) || j.created_by === S.user.id)) {
     let arm = 0;
     btn('刪除', 'btn ghost', async () => {
       if (!arm) { arm = 1; toast('再按一次「刪除」確定'); setTimeout(() => { arm = 0; }, 3000); return; }
