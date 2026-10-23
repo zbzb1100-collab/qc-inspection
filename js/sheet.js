@@ -78,6 +78,7 @@ function paintSheet() {
   $('sh-log').hidden = isNew; $('sh-log').open = false; $('sh-loglist').innerHTML = '';
   paintVendorMode();
   paintLock();
+  paintNext(isNew);
   paintPhotos();
   paintMini();
 }
@@ -92,6 +93,16 @@ async function paintMini() {
   const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
   box.appendChild(pin);
 }
+// 舊缺失：最上面直接說下一步要做什麼，點了捲到修繕區
+function paintNext(isNew) {
+  const b = $('sh-next'), st = cur.status, nf = isNofix(cur), sign = needSign(cur.inspect_type_id), v = isVendor();
+  const msg = isNew ? '' : st === 'todo' ? '修好後拍「修繕後照片」，按「修繕完成」'
+    : st === 'fixed' && !v ? (nf ? '確認是否同意不修' : '到現場複驗，合格按「複驗合格」') + (sign ? '，再請客戶簽認' : '')
+    : st === 'signing' && !v ? '請客戶簽名，就結案' : '';
+  b.hidden = !msg; b.innerHTML = ''; if (!msg) return;
+  b.append(el('b', null, '下一步：'), document.createTextNode(msg + '　↓'));
+}
+$('sh-next').onclick = () => $('sh-repair').scrollIntoView({ behavior: 'smooth', block: 'start' });
 // 已結案：資料鎖定（資料庫也會擋），要改只能由管理者重新開案
 function paintLock() {
   if (cur.status !== 'closed') return;   // 沒結案時的可否編輯由 paintVendorMode 決定
@@ -120,7 +131,10 @@ function paintChoices() {
     paintChoices();
   });
   const items = cur.category_id ? M.list('items').filter(i => i.category_id === cur.category_id && (M.itemIn(i, zid) || i.id === cur.item_id)) : [];
-  chips($('sh-item'), items, cur.item_id, r => { cur.item_id = r.id; paintChoices(); },
+  chips($('sh-item'), items, cur.item_id, r => {
+    const first = !cur.id && !cur.item_id; cur.item_id = r.id; paintChoices();
+    if (first) $('sh-step2').scrollIntoView({ behavior: 'smooth', block: 'start' });   // 新增時選好分類就帶到第 ② 步
+  },
     { empty: cur.category_id ? '此工項尚無缺失內容，請管理者新增' : '請先選工項' });
   chips($('sh-method'), M.list('repair_methods'), cur.repair_method_id, r => { cur.repair_method_id = cur.repair_method_id === r.id ? null : r.id; paintChoices(); });
   // 修繕廠商：工項預設廠商做成按鈕，其他廠商用下拉

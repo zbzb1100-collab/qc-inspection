@@ -435,3 +435,6 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .fillsum .todo b{color:var(--todo)}.fillsum .fixed b{color:var(--fixed)}.fillsum .signing b{color:var(--sign)}.fillsum .closed b{color:var(--closed)}
 .stickybar{position:sticky;bottom:calc(-90px + 72px + env(safe-area-inset-bottom,0px));z-index:3;padding-top:8px;background:linear-gradient(to bottom,transparent,var(--bg) 30%)}
 .stickybar .btn{min-height:52px;font-size:17px}
+.step{font-weight:700;font-size:15px;color:var(--accent);border-top:1px solid var(--line);padding-top:10px;margin-top:2px}
+.nextstep{display:block;width:100%;text-align:left;border:1px solid var(--accent);background:var(--surface2);color:var(--ink);border-radius:10px;padding:10px 12px;font-size:16px;cursor:pointer}
+.nextstep b{color:var(--accent)}

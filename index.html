@@ -164,9 +164,11 @@
     <div class="row" style="flex-wrap:nowrap;align-items:center"><button class="btn ghost" id="sh-back" style="flex:1;font-size:24px;font-weight:700;padding:14px 18px;text-align:center;justify-content:center">‹ 返回</button><span class="status todo" id="sh-status">待修</span></div>
     <h2><span class="no" id="sh-no">1</span><span id="sh-title">新增缺失</span></h2>
     <div class="hint" id="sh-where"></div>
+    <button class="nextstep" id="sh-next" type="button" hidden></button>
     <div class="plan" id="sh-mini" hidden style="flex-shrink:0"><img id="sh-miniimg" alt="缺失在平面圖上的位置"></div>
     <div class="row" id="sh-placerow" hidden><button class="btn ghost" id="sh-place" type="button"></button><button class="btn ghost" id="sh-unplace" type="button">移除位置</button></div>
     <div id="sh-cust-wrap"><label class="f">客戶名稱（交屋檢查）</label><input type="text" id="sh-cust" placeholder="選填"></div>
+    <div class="step" id="sh-step1">① 選分類：空間 → 工項 → 缺失內容</div>
     <div><label class="f">空間</label><div class="chips" id="sh-space"></div></div>
     <div><label class="f">工項</label><div class="chips" id="sh-cat"></div></div>
     <div><label class="f">缺失內容</label><div class="chips" id="sh-item"></div></div>
@@ -176,6 +178,7 @@
     </div>
     <div><label class="f">修繕廠商（誰來修，預帶此工項的廠商）</label><div class="chips" id="sh-fixvendor-chips"></div><select id="sh-fixvendor-other" style="margin-top:8px"></select></div>
     <div><label class="f">責任廠商（誰負責、扣款對象，預帶同修繕廠商，可改）</label><select id="sh-vendor"></select></div>
+    <div class="step" id="sh-step2">② 補證據：拍照、寫說明，按「儲存」</div>
     <div><label class="f">缺失照片（修繕前）</label><div class="photos" id="sh-photos"></div></div>
     <div><label class="f">缺失說明</label><textarea id="sh-desc" placeholder="補充說明（選填）"></textarea></div>
 
