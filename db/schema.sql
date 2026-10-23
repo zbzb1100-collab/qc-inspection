@@ -932,3 +932,481 @@ end $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ========== 20_異動紀錄與結案鎖定 ==========
+-- 20_異動紀錄與結案鎖定.sql
+-- 每次新增、修改、刪除缺失，以及新增、刪除照片，都自動記一筆：誰、什麼時候、哪些欄位從什麼改成什麼。
+-- 紀錄只能看、不能改也不能刪（沒有開放寫入權限，只有資料庫觸發器會寫）。缺失刪掉後紀錄仍保留。
+-- 可重複執行。
+
+create table if not exists public.defect_logs (
+  id bigint generated always as identity primary key,
+  defect_id bigint not null,                 -- 不設外鍵：缺失刪除後紀錄仍保留
+  action text not null,                      -- 新增／修改／刪除／新增照片／刪除照片
+  changes jsonb not null default '{}'::jsonb, -- 修改：{欄位: [舊值, 新值]}；新增／刪除：整筆內容
+  by_user uuid default auth.uid(),
+  at timestamptz not null default now()
+);
+create index if not exists defect_logs_defect_idx on public.defect_logs (defect_id, at);
+
+alter table public.defect_logs enable row level security;
+drop policy if exists defect_logs_read on public.defect_logs;
+create policy defect_logs_read on public.defect_logs for select to authenticated
+  using (public.is_staff() or public.can_see_defect(defect_id));
+-- 不建立 insert／update／delete 權限：網頁端無法寫入或竄改
+
+create or replace function public.log_defect() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare o jsonb; n jsonb; diff jsonb := '{}'::jsonb; k text;
+  skip text[] := array['updated_at','updated_by','created_at','fixed_at','closed_at','verified_at'];
+begin
+  if tg_op = 'INSERT' then
+    insert into public.defect_logs (defect_id, action, changes) values (new.id, '新增', to_jsonb(new) - skip);
+    return new;
+  elsif tg_op = 'DELETE' then
+    insert into public.defect_logs (defect_id, action, changes) values (old.id, '刪除', to_jsonb(old));
+    return old;
+  end if;
+  o := to_jsonb(old); n := to_jsonb(new);
+  for k in select jsonb_object_keys(n) loop
+    if not (k = any(skip)) and (o -> k) is distinct from (n -> k) then
+      diff := diff || jsonb_build_object(k, jsonb_build_array(o -> k, n -> k));
+    end if;
+  end loop;
+  if diff <> '{}'::jsonb then
+    insert into public.defect_logs (defect_id, action, changes) values (new.id, '修改', diff);
+  end if;
+  return new;
+end $$;
+drop trigger if exists defects_log on public.defects;
+create trigger defects_log after insert or update or delete on public.defects
+  for each row execute function public.log_defect();
+
+create or replace function public.log_defect_photo() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.defect_logs (defect_id, action, changes)
+    values (new.defect_id, '新增照片', jsonb_build_object('kind', new.kind, 'path', new.path));
+    return new;
+  end if;
+  -- 整筆缺失被刪除時照片會連帶刪除，那時已有「刪除」紀錄，不再逐張記
+  if exists (select 1 from public.defects where id = old.defect_id) then
+    insert into public.defect_logs (defect_id, action, changes)
+    values (old.defect_id, '刪除照片', jsonb_build_object('kind', old.kind, 'path', old.path));
+  end if;
+  return old;
+end $$;
+drop trigger if exists defect_photos_log on public.defect_photos;
+create trigger defect_photos_log after insert or delete on public.defect_photos
+  for each row execute function public.log_defect_photo();
+
+-- ===== 結案鎖定（2026-10-23 LMS：照改善報告） =====
+-- 已結案的缺失誰都不能改、不能刪、不能加刪照片；要修改只能由管理者「重新開案」並填原因。
+-- 重新開案只把狀態退回待修，舊的結案資料都留在上面的異動紀錄裡。
+alter table public.defects add column if not exists reopen_reason text;
+
+create or replace function public.lock_closed_defect() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then return coalesce(new, old); end if;     -- SQL Editor 維護用
+  if tg_op = 'DELETE' then
+    if old.status = 'closed' then raise exception '已結案的缺失不能刪除'; end if;
+    return old;
+  end if;
+  if old.status <> 'closed' then return new; end if;
+  if new.status = 'todo' then
+    if not public.is_admin() then raise exception '只有管理者可以重新開案'; end if;
+    if coalesce(btrim(new.reopen_reason), '') = '' then raise exception '重新開案要填原因'; end if;
+    return new;
+  end if;
+  raise exception '已結案的缺失不能修改，要修改請管理者重新開案';
+end $$;
+-- 名稱排在 defects_guard 前面，先檢查
+drop trigger if exists defects_closed_lock on public.defects;
+create trigger defects_closed_lock before update or delete on public.defects
+  for each row execute function public.lock_closed_defect();
+
+create or replace function public.lock_closed_photo() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare did bigint := coalesce(new.defect_id, old.defect_id);
+begin
+  if auth.uid() is null then return coalesce(new, old); end if;
+  if exists (select 1 from public.defects where id = did and status = 'closed') then
+    raise exception '已結案的缺失不能新增或刪除照片';
+  end if;
+  return coalesce(new, old);
+end $$;
+drop trigger if exists defect_photos_closed_lock on public.defect_photos;
+create trigger defect_photos_closed_lock before insert or delete on public.defect_photos
+  for each row execute function public.lock_closed_photo();
+
+-- ========== 21_照片保護 ==========
+-- 21_照片保護.sql
+-- 照片刪除改成「軟刪除」：只標記已刪除、檔案保留，管理者可以在缺失表單還原。
+-- 不能刪的照片：已結案缺失的照片（20 已擋）、客戶簽名、已修繕／待簽認時最後一張修繕後照片。
+-- 真正刪除照片紀錄只能在 SQL Editor 由管理者做。需先執行 20_異動紀錄與結案鎖定.sql。可重複執行。
+
+alter table public.defect_photos add column if not exists deleted_at timestamptz;
+alter table public.defect_photos add column if not exists deleted_by uuid references auth.users(id);
+
+drop policy if exists photos_update on public.defect_photos;
+create policy photos_update on public.defect_photos for update to authenticated
+  using (public.is_admin() or created_by = auth.uid())
+  with check (public.is_admin() or created_by = auth.uid());
+drop policy if exists photos_delete on public.defect_photos;
+create policy photos_delete on public.defect_photos for delete to authenticated using (false);
+drop policy if exists storage_photos_delete on storage.objects;
+create policy storage_photos_delete on storage.objects for delete to authenticated
+  using (bucket_id = 'photos' and (public.is_admin() or owner = auth.uid()) and not exists (
+    select 1 from public.defect_photos p where p.path = storage.objects.name));   -- 只能清掉沒有紀錄的檔案（上傳失敗或整筆缺失已刪）
+
+create or replace function public.guard_photo() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare d record;
+begin
+  if auth.uid() is null then return new; end if;
+  -- 只能改「刪除／還原」，其他欄位保持原樣
+  new.defect_id := old.defect_id; new.kind := old.kind; new.path := old.path;
+  new.created_by := old.created_by; new.created_at := old.created_at;
+  if new.deleted_at is not distinct from old.deleted_at then return new; end if;
+  select * into d from public.defects where id = old.defect_id;
+  if d.status = 'closed' then raise exception '已結案的缺失不能刪除或還原照片'; end if;
+  if new.deleted_at is null then                       -- 還原
+    if not public.is_admin() then raise exception '只有管理者可以還原照片'; end if;
+    new.deleted_by := null; return new;
+  end if;
+  if old.kind = 'sign' then raise exception '客戶簽名不能刪除'; end if;
+  if old.kind = 'after' and d.status in ('fixed','signing') and d.close_type is distinct from '不修'
+     and not exists (select 1 from public.defect_photos where defect_id = old.defect_id and kind = 'after'
+                     and deleted_at is null and id <> old.id) then
+    raise exception '已修繕的缺失至少要留一張修繕後照片';
+  end if;
+  new.deleted_at := now(); new.deleted_by := auth.uid();
+  return new;
+end $$;
+drop trigger if exists defect_photos_guard on public.defect_photos;
+create trigger defect_photos_guard before update on public.defect_photos
+  for each row execute function public.guard_photo();
+
+-- 異動紀錄也記照片刪除／還原
+create or replace function public.log_photo_soft() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.deleted_at is distinct from old.deleted_at then
+    insert into public.defect_logs (defect_id, action, changes)
+    values (new.defect_id, case when new.deleted_at is null then '還原照片' else '刪除照片' end,
+            jsonb_build_object('kind', new.kind, 'path', new.path));
+  end if;
+  return new;
+end $$;
+drop trigger if exists defect_photos_log_soft on public.defect_photos;
+create trigger defect_photos_log_soft after update on public.defect_photos
+  for each row execute function public.log_photo_soft();
+
+-- 狀態檢查改成只算沒被刪除的照片（其餘規則同 9_不修複驗.sql）
+create or replace function public.guard_defect() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); adm boolean := public.is_admin(); vend bigint := public.my_vendor();
+        fd date; st text; sign boolean;
+begin
+  if me is null then return new; end if;   -- 在 SQL Editor 由管理者直接執行時不檢查
+
+  if tg_op = 'INSERT' then
+    if vend is not null then raise exception '廠商帳號不能新增缺失'; end if;
+    new.status := 'todo'; new.close_type := null; new.close_reason := null; new.fixed_date := null;
+    new.fixed_by := null; new.fixed_at := null; new.closed_by := null; new.closed_at := null;
+    new.verified_by := null; new.verified_at := null; new.signed_name := null; new.signed_date := null;
+    new.created_by := me; new.created_at := now(); new.updated_by := null; new.updated_at := now();
+    return new;
+  end if;
+
+  if vend is not null then
+    if new.status is distinct from old.status and not (old.status = 'todo' and new.status = 'fixed') then
+      raise exception '廠商帳號只能回報修繕完成';
+    end if;
+    fd := new.fixed_date; st := new.status;
+    new := old; new.fixed_date := fd; new.status := st;
+  end if;
+
+  -- 不能改的欄位：建立者、建立時間、案場／檢查類型／棟／樓／戶
+  new.created_by := old.created_by; new.created_at := old.created_at;
+  new.site_id := old.site_id; new.inspect_type_id := old.inspect_type_id;
+  new.building_id := old.building_id; new.floor := old.floor; new.unit_id := old.unit_id;
+  new.fixed_by := old.fixed_by; new.fixed_at := old.fixed_at;
+  new.closed_by := old.closed_by; new.closed_at := old.closed_at;
+  new.verified_by := old.verified_by; new.verified_at := old.verified_at;
+  select coalesce(need_sign, false) into sign from public.inspect_types where id = old.inspect_type_id;
+
+  if new.status is distinct from old.status then
+    if old.status = 'todo' and new.status = 'fixed' and new.close_type = '不修' then   -- 提出不修，等複驗確認
+      if coalesce(btrim(new.close_reason), '') = '' then raise exception '不修要填原因'; end if;
+      new.fixed_date := null; new.fixed_by := me; new.fixed_at := now();
+    elsif old.status = 'todo' and new.status = 'fixed' then
+      if not exists (select 1 from public.defect_photos where defect_id = new.id and kind = 'after' and deleted_at is null) then
+        raise exception '要先上傳修繕後照片，才能標示修繕完成';
+      end if;
+      new.close_type := null; new.close_reason := null;
+      new.fixed_date := coalesce(new.fixed_date, current_date);
+      new.fixed_by := me; new.fixed_at := now();
+    elsif old.status = 'fixed' and new.status = 'signing' and sign then      -- 複驗確認（修好或同意不修），等客戶簽認
+      new.close_type := old.close_type; new.close_reason := old.close_reason; new.verified_by := me; new.verified_at := now();
+    elsif old.status = 'fixed' and new.status = 'closed' and not sign then   -- 複驗確認，結案
+      new.close_type := coalesce(old.close_type, '複驗合格'); new.close_reason := old.close_reason;
+      new.verified_by := me; new.verified_at := now(); new.closed_by := me; new.closed_at := now();
+    elsif old.status = 'signing' and new.status = 'closed' then   -- 客戶簽認，結案
+      if not exists (select 1 from public.defect_photos where defect_id = new.id and kind = 'sign' and deleted_at is null
+                     and created_at >= coalesce(old.verified_at, '-infinity')) then   -- 要這一輪複驗後的簽名
+        raise exception '請客戶在簽名板簽名';
+      end if;
+      new.signed_date := coalesce(new.signed_date, current_date);
+      new.close_type := coalesce(old.close_type, '複驗合格'); new.close_reason := old.close_reason;
+      new.closed_by := me; new.closed_at := now();
+    elsif old.status in ('fixed','signing') and new.status = 'todo' then     -- 複驗不合格／客戶不認可，退回待修
+      new.close_type := null; new.close_reason := null; new.fixed_date := null;
+      new.fixed_by := null; new.fixed_at := null; new.verified_by := null; new.verified_at := null;
+      new.signed_name := null; new.signed_date := null;
+    elsif old.status = 'closed' and new.status = 'todo' and adm then
+      new.close_type := null; new.close_reason := null; new.fixed_date := null;
+      new.fixed_by := null; new.fixed_at := null; new.closed_by := null; new.closed_at := null;
+      new.verified_by := null; new.verified_at := null; new.signed_name := null; new.signed_date := null;
+    else
+      raise exception '不允許的狀態變更：% → %', old.status, new.status;
+    end if;
+  else
+    new.close_type := old.close_type;
+    if old.close_type = '不修' and coalesce(btrim(new.close_reason), '') = '' then
+      new.close_reason := old.close_reason;
+    end if;
+  end if;
+
+  new.updated_at := now(); new.updated_by := me;
+  return new;
+end $$;
+
+-- ========== 22_匯入紀錄與轉檔權限 ==========
+-- 22_匯入紀錄與轉檔權限.sql
+-- 1. 設定 Excel 匯入批次紀錄：誰、什麼時候、哪個檔、是否完整同步、各表新增／修改／刪除／停用了哪些。
+-- 2. 報告轉檔權限分離：AI 轉檔結果只有「轉檔機器人」帳號能寫；同事只能重新排隊、要求立即轉檔、確認匯入。
+-- 3. 確認匯入改成一次完成：缺失全部寫入後才標記「已匯入」，中途失敗就一筆都不寫，也不會被兩個人重複匯入。
+-- 執行後請把轉檔機器人帳號標記起來（Email 換成機器人用的那個）：
+--   update public.profiles set is_bot = true where email = '機器人的 Email';
+-- 還沒標記機器人之前，轉檔照舊可以跑（相容模式）。可重複執行。
+
+-- ---------- 1. 設定匯入紀錄 ----------
+create table if not exists public.settings_import_logs (
+  id bigint generated always as identity primary key,
+  site_id bigint references public.sites(id),
+  file_name text,
+  full_sync boolean not null default false,
+  summary jsonb not null default '[]'::jsonb,
+  by_user uuid default auth.uid() references auth.users(id),
+  at timestamptz not null default now()
+);
+grant select, insert on public.settings_import_logs to authenticated;
+alter table public.settings_import_logs enable row level security;
+drop policy if exists settings_import_logs_read on public.settings_import_logs;
+drop policy if exists settings_import_logs_insert on public.settings_import_logs;
+create policy settings_import_logs_read on public.settings_import_logs for select to authenticated using (public.is_admin());
+create policy settings_import_logs_insert on public.settings_import_logs for insert to authenticated
+  with check (public.is_admin() and by_user = auth.uid());
+-- 不開放修改、刪除
+
+-- ---------- 2. 轉檔機器人 ----------
+alter table public.profiles add column if not exists is_bot boolean not null default false;
+
+create or replace function public.guard_report_job() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare me uuid := auth.uid(); bot boolean; anybot boolean;
+begin
+  if me is null then return new; end if;                                   -- SQL Editor
+  if current_setting('app.report_import', true) = 'on' then return new; end if;   -- 由 import_report_job 標記已匯入
+  select coalesce(is_bot, false) into bot from public.profiles where id = me;
+  anybot := exists (select 1 from public.profiles where is_bot and active);
+  -- 不論誰都不能改：檔案、案場、上傳者
+  new.site_id := old.site_id; new.path := old.path; new.file_name := old.file_name;
+  new.created_by := old.created_by; new.created_at := old.created_at;
+  new.imported_by := old.imported_by; new.imported_at := old.imported_at;
+  if new.status = 'imported' and old.status <> 'imported' then
+    raise exception '請在畫面上按「確認匯入」';
+  end if;
+  if bot or not anybot then                        -- 機器人（或還沒指定機器人的相容模式）
+    if bot and new.status is distinct from old.status
+       and not (old.status in ('pending','processing') and new.status in ('processing','done','error')) then
+      raise exception '轉檔機器人不能把狀態從 % 改成 %', old.status, new.status;
+    end if;
+    return new;
+  end if;
+  -- 一般同事：AI 結果、提醒、轉檔時間都不能改
+  new.result := old.result; new.processed_at := old.processed_at;
+  if new.status is distinct from old.status then
+    if old.status = 'error' and new.status = 'pending' then new.message := null;   -- 重新排隊
+    else raise exception '轉檔狀態只能由轉檔機器人更新'; end if;
+  else
+    new.message := old.message;
+  end if;
+  return new;
+end $$;
+drop trigger if exists report_jobs_guard on public.report_jobs;
+create trigger report_jobs_guard before update on public.report_jobs
+  for each row execute function public.guard_report_job();
+
+-- ---------- 3. 確認匯入（一次完成） ----------
+-- p_rows：[{inspect_type_id, building_id, floor, unit_id, space_id, category_id, item_id, repair_method_id,
+--           fix_vendor_id, resp_vendor_id, description}, …]；回傳新缺失的編號（同順序），照片由網頁接著上傳。
+create or replace function public.import_report_job(p_job bigint, p_rows jsonb) returns bigint[]
+language plpgsql security invoker set search_path = public as $$
+declare j record; r jsonb; nid bigint; ids bigint[] := '{}';
+begin
+  if not public.is_staff() then raise exception '只有內部人員可以匯入'; end if;
+  select * into j from public.report_jobs where id = p_job for update;
+  if not found then raise exception '找不到這份報告'; end if;
+  if j.status = 'imported' then raise exception '這份報告已經匯入過了'; end if;
+  if j.status <> 'done' then raise exception '這份報告還沒轉檔完成'; end if;
+  if jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) = 0 then raise exception '沒有要匯入的缺失'; end if;
+  for r in select * from jsonb_array_elements(p_rows) loop
+    insert into public.defects (site_id, inspect_type_id, building_id, floor, unit_id, space_id, category_id, item_id,
+                                repair_method_id, fix_vendor_id, resp_vendor_id, description, status, created_by)
+    values (j.site_id, (r->>'inspect_type_id')::bigint, (r->>'building_id')::bigint, r->>'floor', (r->>'unit_id')::bigint,
+            (r->>'space_id')::bigint, (r->>'category_id')::bigint, (r->>'item_id')::bigint, (r->>'repair_method_id')::bigint,
+            (r->>'fix_vendor_id')::bigint, (r->>'resp_vendor_id')::bigint, r->>'description', 'todo', auth.uid())
+    returning id into nid;
+    ids := ids || nid;
+  end loop;
+  perform set_config('app.report_import', 'on', true);
+  update public.report_jobs set status = 'imported', imported_by = auth.uid(), imported_at = now() where id = p_job;
+  perform set_config('app.report_import', 'off', true);
+  return ids;
+end $$;
+grant execute on function public.import_report_job(bigint, jsonb) to authenticated;
+
+-- ========== 23_案場權限 ==========
+-- 23_案場權限.sql
+-- 每個帳號只看得到被開通的案場：案場、棟別、戶別、平面圖、缺失、照片、異動紀錄、報告轉檔、照片與平面圖檔案都照這個規則。
+-- 管理者看得到全部案場。清單（檢查類型、工項、缺失內容、空間別、廠商、修繕方式）仍是各案場共用。
+-- 執行時會把「現有的每個帳號」開通到「現有的每個案場」，所以跑完不會有人突然看不到資料。
+-- 之後在後台「帳號」逐人勾選可用案場。需先執行 20、21、22。可重複執行。
+
+create table if not exists public.user_sites (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  site_id bigint not null references public.sites(id) on delete cascade,
+  granted_by uuid default auth.uid(),
+  granted_at timestamptz not null default now(),
+  primary key (user_id, site_id)
+);
+-- 第一次執行：現有帳號 × 現有案場全部開通（之後重跑不會把管理者取消的再加回來）
+do $$ begin
+  if not exists (select 1 from public.user_sites) then
+    insert into public.user_sites (user_id, site_id) select p.id, s.id from public.profiles p cross join public.sites s;
+  end if;
+end $$;
+
+grant select, insert, delete on public.user_sites to authenticated;
+alter table public.user_sites enable row level security;
+drop policy if exists user_sites_read on public.user_sites;
+drop policy if exists user_sites_write on public.user_sites;
+create policy user_sites_read on public.user_sites for select to authenticated using (user_id = auth.uid() or public.is_admin());
+create policy user_sites_write on public.user_sites for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+create or replace function public.has_site(sid bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select public.is_admin() or (public.is_active_user() and exists (
+    select 1 from public.user_sites where user_id = auth.uid() and site_id = sid))
+$$;
+create or replace function public.can_see_defect(did bigint) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.defects d where d.id = did and public.has_site(d.site_id)
+                 and (public.is_staff() or d.fix_vendor_id = public.my_vendor()))
+$$;
+grant execute on function public.has_site(bigint), public.can_see_defect(bigint) to authenticated;
+
+-- 案場與現場結構
+drop policy if exists sites_read on public.sites;
+create policy sites_read on public.sites for select to authenticated using (public.has_site(id));
+drop policy if exists buildings_read on public.buildings;
+create policy buildings_read on public.buildings for select to authenticated using (public.has_site(site_id));
+drop policy if exists units_read on public.units;
+create policy units_read on public.units for select to authenticated
+  using (exists (select 1 from public.buildings b where b.id = building_id and public.has_site(b.site_id)));
+drop policy if exists unit_spaces_read on public.unit_spaces;
+create policy unit_spaces_read on public.unit_spaces for select to authenticated
+  using (exists (select 1 from public.units u join public.buildings b on b.id = u.building_id where u.id = unit_id and public.has_site(b.site_id)));
+drop policy if exists plans_read on public.plans;
+create policy plans_read on public.plans for select to authenticated
+  using (exists (select 1 from public.units u join public.buildings b on b.id = u.building_id where u.id = unit_id and public.has_site(b.site_id)));
+drop policy if exists plan_spaces_read on public.plan_spaces;
+create policy plan_spaces_read on public.plan_spaces for select to authenticated
+  using (exists (select 1 from public.plans p join public.units u on u.id = p.unit_id join public.buildings b on b.id = u.building_id
+                 where p.id = plan_id and public.has_site(b.site_id)));
+
+-- 缺失、照片、異動紀錄
+drop policy if exists defects_read on public.defects;
+drop policy if exists defects_insert on public.defects;
+drop policy if exists defects_update on public.defects;
+create policy defects_read on public.defects for select to authenticated
+  using (public.has_site(site_id) and (public.is_staff() or fix_vendor_id = public.my_vendor()));
+create policy defects_insert on public.defects for insert to authenticated
+  with check (public.is_staff() and public.has_site(site_id) and created_by = auth.uid());
+create policy defects_update on public.defects for update to authenticated
+  using (public.has_site(site_id) and (public.is_staff() or fix_vendor_id = public.my_vendor()))
+  with check (public.has_site(site_id) and (public.is_staff() or fix_vendor_id = public.my_vendor()));
+-- photos_read 已經是 can_see_defect，跟著上面的新定義
+drop policy if exists defect_logs_read on public.defect_logs;
+create policy defect_logs_read on public.defect_logs for select to authenticated
+  using (public.can_see_defect(defect_id) or public.is_admin());   -- 已刪除缺失的紀錄只有管理者看得到
+
+-- 報告轉檔
+drop policy if exists report_jobs_read on public.report_jobs;
+drop policy if exists report_jobs_insert on public.report_jobs;
+drop policy if exists report_jobs_update on public.report_jobs;
+create policy report_jobs_read on public.report_jobs for select to authenticated using (public.is_staff() and public.has_site(site_id));
+create policy report_jobs_insert on public.report_jobs for insert to authenticated
+  with check (public.is_staff() and public.has_site(site_id) and created_by = auth.uid());
+create policy report_jobs_update on public.report_jobs for update to authenticated
+  using (public.is_staff() and public.has_site(site_id)) with check (public.is_staff() and public.has_site(site_id));
+
+-- 檔案：照片、平面圖、報告都要能對到使用者看得到的那筆資料
+drop policy if exists storage_photos_read on storage.objects;
+create policy storage_photos_read on storage.objects for select to authenticated
+  using (bucket_id = 'photos' and exists (select 1 from public.defects d
+         where d.id::text = (storage.foldername(name))[1] and public.can_see_defect(d.id)));
+drop policy if exists storage_plans_read on storage.objects;
+create policy storage_plans_read on storage.objects for select to authenticated
+  using (bucket_id = 'plans' and (public.is_admin() or exists (select 1 from public.plans p
+         join public.units u on u.id = p.unit_id join public.buildings b on b.id = u.building_id
+         where p.path = storage.objects.name and public.has_site(b.site_id))));
+drop policy if exists storage_reports_read on storage.objects;
+create policy storage_reports_read on storage.objects for select to authenticated
+  using (bucket_id = 'reports' and public.is_staff() and exists (select 1 from public.report_jobs j
+         where split_part(j.path, '/', 1) = (storage.foldername(name))[1] and public.has_site(j.site_id)));
+
+-- ========== 24_簽認紀錄 ==========
+-- 24_簽認紀錄.sql
+-- 每次客戶簽名（單筆或整戶）都留一筆簽認紀錄：當時涵蓋哪些缺失、每筆的內容、簽認人、日期、簽名圖。
+-- 之後這戶有新增或重新開案的缺失，填寫頁會提示「需要重新簽認」。紀錄只能新增、不能改或刪。
+-- 需先執行 23_案場權限.sql。可重複執行。
+
+create table if not exists public.sign_records (
+  id bigint generated always as identity primary key,
+  site_id bigint not null references public.sites(id),
+  inspect_type_id bigint references public.inspect_types(id),
+  unit_id bigint references public.units(id),
+  floor text,
+  defect_ids bigint[] not null default '{}',
+  snapshot jsonb not null default '[]'::jsonb,     -- [{id, 編號, 空間, 工項, 缺失內容, 說明, 結案方式}]
+  signed_name text,
+  signed_date date,
+  sign_path text,                                   -- 簽名圖（photos 儲存空間）
+  by_user uuid default auth.uid() references auth.users(id),
+  at timestamptz not null default now()
+);
+create index if not exists sign_records_unit_idx on public.sign_records (unit_id, inspect_type_id, at desc);
+
+grant select, insert on public.sign_records to authenticated;
+alter table public.sign_records enable row level security;
+drop policy if exists sign_records_read on public.sign_records;
+drop policy if exists sign_records_insert on public.sign_records;
+create policy sign_records_read on public.sign_records for select to authenticated
+  using (public.is_staff() and public.has_site(site_id));
+create policy sign_records_insert on public.sign_records for insert to authenticated
+  with check (public.is_staff() and public.has_site(site_id) and by_user = auth.uid());
