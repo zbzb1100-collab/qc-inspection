@@ -949,6 +949,7 @@ create table if not exists public.defect_logs (
 );
 create index if not exists defect_logs_defect_idx on public.defect_logs (defect_id, at);
 
+grant select on public.defect_logs to authenticated;
 alter table public.defect_logs enable row level security;
 drop policy if exists defect_logs_read on public.defect_logs;
 create policy defect_logs_read on public.defect_logs for select to authenticated
