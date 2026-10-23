@@ -9,7 +9,7 @@ async function openDefect(row, c) {
     planned_date: today(10), fixed_date: null, description: '', customer_name: lastCustomer(ctx.create.unit_id)
   };
   cur = base;
-  cur.before = []; cur.after = []; cur.sign = []; cur.removed = [];
+  cur.before = []; cur.after = []; cur.sign = []; cur.removed = []; cur.trash = [];
   cur.respTouched = !!row && row.resp_vendor_id !== row.fix_vendor_id;
   $('sheet').hidden = false; $('sheet').querySelector('.panel').scrollTop = 0;
   paintSheet();
@@ -17,7 +17,9 @@ async function openDefect(row, c) {
     const { data, error } = await sb.from('defect_photos').select('*').eq('defect_id', row.id).order('id');
     if (error) { toast(errMsg(error)); return; }
     const urls = await signedUrls('photos', data.map(p => p.path));
-    data.forEach((p, i) => (p.kind === 'after' ? cur.after : p.kind === 'sign' ? cur.sign : cur.before).push({ id: p.id, path: p.path, url: urls[i], by: p.created_by }));
+    cur.trash = [];
+    data.forEach((p, i) => (p.deleted_at ? cur.trash : p.kind === 'after' ? cur.after : p.kind === 'sign' ? cur.sign : cur.before)
+      .push({ id: p.id, kind: p.kind, path: p.path, url: urls[i], by: p.created_by, deleted_at: p.deleted_at, deleted_by: p.deleted_by }));
     paintPhotos();
   }
 }
@@ -103,7 +105,7 @@ function paintVendorMode() {
   const v = isVendor(); const panel = $('sheet').querySelector('.panel');
   panel.querySelectorAll('.chip, #sh-cust, #sh-date, #sh-desc, #sh-fixvendor-other, #sh-vendor').forEach(x => { x.disabled = v; });
   if (!v) return;
-  ['sh-pass', 'sh-sign', 'sh-nofix', 'sh-reopen', 'sh-del', 'sh-save'].forEach(id => { $(id).hidden = true; });
+  ['sh-pass', 'sh-sign', 'sh-nofix', 'sh-reopen', 'sh-del', 'sh-save', 'sh-trash'].forEach(id => { $(id).hidden = true; });
   if (cur.status === 'fixed') $('sh-closeinfo').textContent = '已回報修繕完成，等甲方複驗。';
   if (cur.status === 'todo') $('sh-closeinfo').textContent = '修好後拍「修繕後照片」，再按「修繕完成」回報。';
 }
@@ -144,6 +146,27 @@ function paintPhotos() {
   photoBox($('sh-photos'), cur.before, 'before');
   photoBox($('sh-afterphotos'), cur.after, 'after');
   paintSigns();
+  paintTrash();
+}
+// 已刪除的照片：檔案還在，管理者可以還原（已結案要先重新開案）
+function paintTrash() {
+  const w = $('sh-trash'), box = $('sh-trashimg'); box.innerHTML = '';
+  w.hidden = !cur.trash.length || !isAdmin();
+  $('sh-trashsum').textContent = `已刪除的照片 ${cur.trash.length} 張`;
+  cur.trash.forEach(p => {
+    const d = el('div', 'trashph'); const im = el('img'); im.src = p.url; im.alt = '已刪除的照片'; im.onclick = () => showViewer(p.url); d.appendChild(im);
+    d.appendChild(el('small', 'hint', `${PHOTO_KIND[p.kind] || ''}｜${M.userName(p.deleted_by) || ''} ${fmtTime(p.deleted_at)}`));
+    if (cur.status !== 'closed') {
+      const b = el('button', 'btn ghost', '還原'); b.type = 'button';
+      b.onclick = () => guard(b, async () => {
+        const { error } = await sb.from('defect_photos').update({ deleted_at: null }).eq('id', p.id); if (error) throw error;
+        cur.trash.splice(cur.trash.indexOf(p), 1); delete p.deleted_at;
+        (p.kind === 'after' ? cur.after : cur.before).push(p); paintPhotos(); toast('照片已還原');
+      });
+      d.appendChild(b);
+    }
+    box.appendChild(d);
+  });
 }
 function paintSigns() {   // 簽名圖只看不刪（簽認的證據）
   const box = $('sh-signimg'); box.innerHTML = '';
@@ -208,9 +231,13 @@ async function persist(needFull = true) {
   }
   if (cur.customer_name) { try { sessionStorage.setItem('qc-cust-' + cur.unit_id, cur.customer_name); } catch (e) { /* ignore */ } }
   // 刪除被移除的照片
+  // 刪除被移除的照片：只標記已刪除、檔案保留（21_照片保護.sql）；資料庫還沒更新時照舊真的刪
   for (const p of cur.removed.slice()) {
-    const { error } = await sb.from('defect_photos').delete().eq('id', p.id); if (error) throw error;
-    await removeFiles('photos', [p.path]);
+    const { error } = await sb.from('defect_photos').update({ deleted_at: new Date().toISOString() }).eq('id', p.id);
+    if (error && /deleted_at/.test(errMsg(error))) {
+      const r = await sb.from('defect_photos').delete().eq('id', p.id); if (r.error) throw r.error;
+      await removeFiles('photos', [p.path]);
+    } else if (error) throw error;
     cur.removed.splice(cur.removed.indexOf(p), 1);
   }
   // 上傳新照片
@@ -320,7 +347,7 @@ function logValue(k, v) {
 function logLine(g) {
   if (g.action === '新增') return '新增這筆缺失';
   if (g.action === '刪除') return '刪除這筆缺失';
-  if (g.action === '新增照片' || g.action === '刪除照片') return `${g.action.slice(0, 2)}${PHOTO_KIND[g.changes.kind] || '照片'}`;
+  if (/照片$/.test(g.action)) return `${g.action.slice(0, 2)}${PHOTO_KIND[g.changes.kind] || '照片'}`;
   const parts = []; let moved = false;
   Object.entries(g.changes).forEach(([k, [a, b]]) => {
     const f = LOG_FIELDS[k]; if (!f) return;
