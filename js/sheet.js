@@ -376,7 +376,7 @@ async function paintLog() {
   const { data, error } = await sb.from('defect_logs').select('*').eq('defect_id', cur.id).order('at', { ascending: false });
   if (me !== cur) return;
   box.innerHTML = '';
-  if (error) { box.appendChild(el('p', 'hint', '還沒有修改歷程（需先執行 20_異動紀錄與結案鎖定.sql）。')); return; }
+  if (error) { box.appendChild(el('p', 'hint', /defect_logs/.test(errMsg(error)) ? '讀不到修改歷程，請確認已執行 20_異動紀錄與結案鎖定.sql。（' + errMsg(error) + '）' : '讀不到修改歷程：' + errMsg(error))); return; }
   const rows = (data || []).map(g => ({ g, t: logLine(g) })).filter(x => x.t);
   if (!rows.length) { box.appendChild(el('p', 'hint', '目前沒有修改紀錄。')); return; }
   rows.forEach(({ g, t }) => {
