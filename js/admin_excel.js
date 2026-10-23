@@ -112,14 +112,14 @@ function xlStage(label, table, rows, o) {
       if (seen.has(x.k)) { res.warns.push(where + '：和前面重複，略過'); return; }
       seen.add(x.k);
       if (x.ex) {
-        const patch = {};
+        const patch = {}, diff = [];
         Object.keys(x.want).forEach(f => {
           if (x.want[f] === undefined) return;
           const a = Array.isArray(x.ex[f]) ? x.ex[f].join('、') : String(x.ex[f] ?? '');
           const b = Array.isArray(x.want[f]) ? x.want[f].join('、') : String(x.want[f]);
-          if (a !== b) patch[f] = x.want[f];
+          if (a !== b) { patch[f] = x.want[f]; diff.push([f, x.ex[f], x.want[f]]); }
         });
-        if (Object.keys(patch).length) res.updates.push({ id: x.ex.id, patch });
+        if (Object.keys(patch).length) res.updates.push({ id: x.ex.id, patch, nm: x.nm, diff });
       } else {
         const ins = Object.assign({}, x.base); Object.keys(x.want).forEach(f => { if (x.want[f] !== undefined) ins[f] = x.want[f]; });
         res.inserts.push(ins); res.names.push(x.nm);
@@ -286,6 +286,51 @@ async function xlApply(data, onStep) {
   await loadMaster();
 }
 
+// 差異明細：逐項列出會新增、修改（欄位前後值）、刪除、停用的項目
+const XL_FIELD = { name: '名稱', code: '代號', sort: '排序', active: '狀態', zone_ids: '區分', zone_id: '區分', floors: '樓層', need_sign: '需簽認',
+  category_id: '工項', building_id: '棟別', vendor_id: '廠商', phone: '電話', contact: '聯絡人', note: '備註' };
+function xlVal(f, v) {
+  if (v == null || v === '' || (Array.isArray(v) && !v.length)) return '（空白）';
+  if (f === 'active') return v ? '啟用' : '停用';
+  if (f === 'need_sign') return v ? '是' : '否';
+  if (f === 'zone_ids') return v.map(id => M.name('zones', id)).join('、');
+  if (f === 'zone_id') return M.name('zones', v);
+  if (f === 'category_id') return M.name('categories', v);
+  if (f === 'building_id') return M.name('buildings', v);
+  if (f === 'vendor_id') return M.name('vendors', v);
+  return Array.isArray(v) ? v.join('、') : String(v);
+}
+function xlDiffDetails(p) {
+  const lines = [];
+  p.names.forEach(n => lines.push(['＋ 新增', n]));
+  p.updates.forEach(u => lines.push(['✎ 修改', `${u.nm || ''}：` + (u.diff || []).map(([f, a, b]) => `${XL_FIELD[f] || f} ${xlVal(f, a)} → ${xlVal(f, b)}`).join('；')]));
+  p.removes.forEach(x => lines.push([x.used ? '⊘ 停用' : '✕ 刪除', x.nm]));
+  if (!lines.length) return null;
+  const d = el('details', 'xl-diff'); d.appendChild(el('summary', null, `看明細（${lines.length} 項）`));
+  const ul = el('div', 'stack');
+  lines.forEach(([t, txt]) => { const r = el('div', 'xl-line ' + (t.includes('刪除') || t.includes('停用') ? 'rm' : t.includes('新增') ? 'add' : 'upd')); r.append(el('b', null, t + '　'), document.createTextNode(txt)); ul.appendChild(r); });
+  d.appendChild(ul); return d;
+}
+// 匯入批次紀錄（22_匯入紀錄與轉檔權限.sql）：誰、何時、是否完整同步、各表變動；資料表還沒建就略過
+async function xlLogBatch(fileName, plan) {
+  const summary = plan.filter(p => p.inserts.length || p.updates.length || (p.removes || []).length).map(p => ({
+    表: p.label, 新增: p.names, 修改: p.updates.map(u => u.nm), 刪除: (p.removes || []).filter(x => !x.used).map(x => x.nm), 停用: (p.removes || []).filter(x => x.used).map(x => x.nm) }));
+  const { error } = await sb.from('settings_import_logs').insert({ site_id: S.sel.siteId, file_name: fileName, full_sync: xlSync, summary, by_user: S.user.id });
+  if (error) console.warn('匯入紀錄沒有寫入：', errMsg(error));
+}
+async function xlShowLogs(box) {
+  const { data, error } = await sb.from('settings_import_logs').select('*').order('at', { ascending: false }).limit(10);
+  if (error || !data || !data.length) return;
+  const d = el('details', 'xl-diff'); d.appendChild(el('summary', null, `最近的匯入紀錄（${data.length}）`));
+  data.forEach(g => {
+    const n = (g.summary || []).reduce((s, t) => s + ['新增', '修改', '刪除', '停用'].reduce((a, k) => a + (t[k] || []).length, 0), 0);
+    const r = el('div', 'hint', `${fmtTime(g.at)}　${M.userName(g.by_user) || ''}　${g.file_name || ''}　${g.full_sync ? '完整同步' : '新增／修改'}　共 ${n} 項`);
+    r.title = (g.summary || []).map(t => t.表 + '：' + ['新增', '修改', '刪除', '停用'].filter(k => (t[k] || []).length).map(k => k + ' ' + t[k].join('、')).join('；')).join('\n');
+    d.appendChild(r);
+  });
+  box.appendChild(d);
+}
+
 // ---------- 畫面 ----------
 function renderExcelAdmin(root) {
   const g = group('excel', 'Excel 批次設定', '匯出／填寫／匯入，新案場快速建立'); root.appendChild(g.d);
@@ -300,6 +345,7 @@ function renderExcelAdmin(root) {
   sl.append(sc, document.createTextNode(' 完整同步：Excel 裡沒有的項目也處理（沒用過的刪除，用過的改成停用，舊紀錄保留；匯入前自動下載一份備份）'));
   g.body.appendChild(sl);
   const out = el('div', 'stack'); out.id = 'xl-out'; g.body.appendChild(out);
+  const hist = el('div'); g.body.appendChild(hist); if (isAdmin()) xlShowLogs(hist);
   let data = null;
 
   async function showPreview() {
@@ -315,9 +361,9 @@ function renderExcelAdmin(root) {
         r.append(el('span', 'grow', p.label), el('span', 'tag' + (p.inserts.length || p.updates.length || p.removes.length ? ' ok' : ''), tag)); box.appendChild(r);
         if (p.removes.length) {
           const del = p.removes.filter(x => !x.used).length, off = p.removes.length - del;
-          const names = p.removes.slice(0, 12).map(x => x.nm + (x.used ? '（停用）' : '（刪除）')).join('、') + (p.removes.length > 12 ? '…' : '');
-          box.appendChild(el('div', 'hint', `預估：刪除 ${del}、停用 ${off} → ${names}`));
+          const w = el('div', 'hint', `會刪除 ${del} 個（沒用過）、停用 ${off} 個（已有缺失用過，紀錄保留）`); w.style.color = 'var(--danger, #c0392b)'; box.appendChild(w);
         }
+        const det = xlDiffDetails(p); if (det) box.appendChild(det);
         if (p.skipSync) box.appendChild(el('div', 'hint', '⚠ 這張表有看不懂的列，這次不處理刪除'));
         if (p.emptySkip) box.appendChild(el('div', 'hint', '這張表是空的，完整同步不會因此刪除或停用任何項目（要清掉請在後台逐項停用）'));
         p.warns.forEach(w => { const wr = el('div', 'hint', '⚠ ' + w); wr.style.color = 'var(--danger, #c0392b)'; box.appendChild(wr); });
@@ -327,11 +373,12 @@ function renderExcelAdmin(root) {
       out.appendChild(el('p', 'hint', `共 ${tot} 筆變動（有⚠的列會略過）。` + (xlSync ? '完整同步會先下載備份檔，再動資料。' : '') + '確認無誤再按匯入。'));
       const go = el('button', 'btn block' + (nRm ? ' danger' : ''), nRm ? '確認同步（含刪除／停用）' : '確認匯入'); go.id = 'xl-go';
       go.onclick = () => guard(go, async () => {
-        const log = el('div', 'sublist'); out.appendChild(log); let n = 0;
+        const log = el('div', 'sublist'); out.appendChild(log); let n = 0; const fname = fi.files[0] ? fi.files[0].name : '';
         await xlApply(data, (r, ph) => {
           if (ph === 'done' && (r.inserts.length || r.updates.length)) { n += r.inserts.length + r.updates.length; log.appendChild(el('div', 'hint', `✓ ${r.label}：新增 ${r.inserts.length}、修改 ${r.updates.length}`)); }
           if (ph === 'removed') { n += r.removes.length; log.appendChild(el('div', 'hint', `✓ ${r.label}：刪除 ${r.deleted}、停用 ${r.deactivated}`)); }
         });
+        await xlLogBatch(fname, plan);
         toast(`完成，共 ${n} 筆`); fi.value = ''; data = null; renderAdmin();
       });
       out.appendChild(go);

@@ -421,3 +421,9 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .trashph{display:flex;flex-direction:column;gap:4px;width:110px}
 .trashph img{opacity:.7}
 .trashph .btn{min-height:36px;padding:4px 8px}
+.xl-diff{margin:4px 0 8px}
+.xl-diff summary{font-size:15px;cursor:pointer;color:var(--accent)}
+.xl-line{font-size:14px;padding:2px 0 2px 8px;border-left:3px solid var(--line)}
+.xl-line.add{border-color:var(--closed)}
+.xl-line.upd{border-color:var(--fixed)}
+.xl-line.rm{border-color:var(--todo)}

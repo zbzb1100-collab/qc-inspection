@@ -134,7 +134,7 @@ function imResolve(r, photos) {
 const imReady = o => !o.bad.length && o.building_id && o.floor && o.unit_id && o.space_id && o.category_id && o.item_id;
 
 // 預覽表：對不到的欄位給下拉補選，確認後逐筆寫入（Excel 匯入、報告轉檔共用）
-function imMountPreview(out, list, onDone) {
+function imMountPreview(out, list, onDone, opts = {}) {
 
   function cellSel(o, field, rows, label) {
     const s = el('select'); s.style.minWidth = '8em';
@@ -193,7 +193,21 @@ function imMountPreview(out, list, onDone) {
     if (todo) out.appendChild(el('p', 'hint', '還有黃色列沒選好，選好或取消勾選後才能匯入。'));
     go.onclick = () => guard(go, async () => {
       const rows = list.filter(o => o.on && imReady(o)); const log = el('p', 'hint'); out.appendChild(log); let n = 0, np = 0;
-      for (const o of rows) {
+      const recOf = o => ({ inspect_type_id: o.inspect_type_id, building_id: o.building_id, floor: o.floor, unit_id: o.unit_id,
+        space_id: o.space_id, category_id: o.category_id, item_id: o.item_id, repair_method_id: o.repair_method_id,
+        fix_vendor_id: o.fix_vendor_id, resp_vendor_id: o.resp_vendor_id, description: o.description });
+      // 轉檔結果：缺失一次全部寫入（失敗就一筆都不寫），再逐筆上傳照片
+      const ids = opts.insertAll ? await opts.insertAll(rows.map(recOf)) : null;
+      if (ids) {
+        let bad = 0;
+        for (const [i, o] of rows.entries()) {
+          for (const z of o.photoFiles) {
+            try { await uploadPhoto(ids[i], 'before', await compressImage(await z.async('blob'))); np++; } catch (e) { bad++; console.warn(e); }
+          }
+          o.on = false; o.done = true; n++; log.textContent = `缺失 ${rows.length} 筆已寫入，上傳照片中… ${np} 張`;
+        }
+        if (bad) toast(`有 ${bad} 張照片上傳失敗，缺失已建立，可到缺失表單補拍`);
+      } else for (const o of rows) {
         const rec = { site_id: S.sel.siteId, inspect_type_id: o.inspect_type_id, building_id: o.building_id, floor: o.floor, unit_id: o.unit_id,
           plan_id: null, x: null, y: null, space_id: o.space_id, category_id: o.category_id, item_id: o.item_id,
           repair_method_id: o.repair_method_id, fix_vendor_id: o.fix_vendor_id, resp_vendor_id: o.resp_vendor_id,
