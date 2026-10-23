@@ -411,3 +411,9 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .lt td.nm .hint.warn{color:var(--todo);font-size:12px;padding-left:8px}
 .err.ok{color:var(--closed)}
 .banner.warn{background:color-mix(in srgb,var(--fixed) 14%,transparent);border-color:color-mix(in srgb,var(--fixed) 45%,transparent)}
+
+/* 修改歷程 */
+#sh-log{margin:6px 0}
+.loglist{display:flex;flex-direction:column;gap:8px;margin-top:8px;max-height:40vh;overflow:auto}
+.logrow{border-left:3px solid var(--line);padding:2px 0 2px 10px;font-size:15px}
+.logrow small{display:block}

@@ -70,6 +70,7 @@ function paintSheet() {
     (cur.fixed_at ? `　修繕完成登錄：${M.userName(cur.fixed_by)} ${fmtTime(cur.fixed_at)}` : '') +
     (cur.verified_at ? `　複驗：${M.userName(cur.verified_by)} ${fmtTime(cur.verified_at)}` : '') +
     (cur.closed_at ? `　結案：${M.userName(cur.closed_by)} ${fmtTime(cur.closed_at)}` : '');
+  $('sh-log').hidden = isNew; $('sh-log').open = false; $('sh-loglist').innerHTML = '';
   paintVendorMode();
   paintPhotos();
   paintMini();
@@ -276,3 +277,48 @@ $('sh-del').onclick = e => {
 };
 const sheetCancel = () => { if (cur) { const cb = ctx.onClose; closeSheet(); if (cb) cb(); } };
 $('sh-cancel').onclick = sheetCancel; $('sh-back').onclick = sheetCancel;
+
+// 修改歷程：每次新增、修改、刪除照片都由資料庫自動記錄（20_缺失異動紀錄.sql），這裡只讀
+const LOG_FIELDS = {
+  space_id: ['空間別', 'spaces'], category_id: ['工項', 'categories'], item_id: ['缺失內容', 'items'],
+  repair_method_id: ['修繕方式', 'repair_methods'], fix_vendor_id: ['修繕廠商', 'vendors'], resp_vendor_id: ['責任廠商', 'vendors'],
+  inspect_type_id: ['檢查類型', 'inspect_types'], unit_id: ['戶別', 'units'], building_id: ['棟別', 'buildings'], floor: ['樓層'],
+  status: ['狀態'], description: ['缺失說明'], customer_name: ['客戶名稱'], planned_date: ['預計修繕日'], fixed_date: ['修繕完成日'],
+  close_type: ['結案方式'], close_reason: ['不修原因'], signed_name: ['簽認人'], signed_date: ['簽認日期'],
+  x: ['位置'], y: ['位置'], plan_id: ['平面圖'],
+};
+const PHOTO_KIND = { before: '修繕前照片', after: '修繕後照片', sign: '簽名' };
+function logValue(k, v) {
+  if (v == null || v === '') return '（空白）';
+  const f = LOG_FIELDS[k];
+  if (k === 'status') return STATUS[v] || v;
+  if (f && f[1]) { const r = M.get(f[1], v); return r ? (r.name || r.code) : `#${v}`; }
+  return String(v);
+}
+function logLine(g) {
+  if (g.action === '新增') return '新增這筆缺失';
+  if (g.action === '刪除') return '刪除這筆缺失';
+  if (g.action === '新增照片' || g.action === '刪除照片') return `${g.action.slice(0, 2)}${PHOTO_KIND[g.changes.kind] || '照片'}`;
+  const parts = []; let moved = false;
+  Object.entries(g.changes).forEach(([k, [a, b]]) => {
+    const f = LOG_FIELDS[k]; if (!f) return;
+    if (k === 'x' || k === 'y' || k === 'plan_id') { if (!moved) parts.push(b == null && k !== 'plan_id' ? '移除圖上位置' : '調整圖上位置'); moved = true; return; }
+    parts.push(`${f[0]}：${logValue(k, a)} → ${logValue(k, b)}`);
+  });
+  return parts.join('；');
+}
+async function paintLog() {
+  const box = $('sh-loglist'), me = cur; box.textContent = '讀取中…';
+  const { data, error } = await sb.from('defect_logs').select('*').eq('defect_id', cur.id).order('at', { ascending: false });
+  if (me !== cur) return;
+  box.innerHTML = '';
+  if (error) { box.appendChild(el('p', 'hint', '還沒有修改歷程（需先執行 20_缺失異動紀錄.sql）。')); return; }
+  const rows = (data || []).map(g => ({ g, t: logLine(g) })).filter(x => x.t);
+  if (!rows.length) { box.appendChild(el('p', 'hint', '目前沒有修改紀錄。')); return; }
+  rows.forEach(({ g, t }) => {
+    const r = el('div', 'logrow');
+    r.append(el('small', 'hint', `${fmtTime(g.at)}　${M.userName(g.by_user) || '系統'}`), el('div', null, t));
+    box.appendChild(r);
+  });
+}
+$('sh-log').addEventListener('toggle', () => { if ($('sh-log').open && cur && cur.id) paintLog(); });
