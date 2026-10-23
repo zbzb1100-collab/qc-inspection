@@ -73,6 +73,14 @@ await page.evaluate(() => { const T = window.__db.T; T.sign_records.forEach(r =>
 await page.evaluate(() => renderFill()); await page.waitForTimeout(400);
 ok(await page.isVisible('#resign') && (await page.textContent('#resign')).includes('新增 1 筆'), '簽認後新增缺失會提示要重新簽認');
 await page.evaluate(() => { const T = window.__db.T; T.defects = T.defects.filter(d => d.id !== 8); }); await page.evaluate(() => renderFill()); await page.waitForTimeout(300);
+// 簽過名的重新開案：修好、複驗合格就直接結案，不用再簽
+await page.evaluate(() => { const d = window.__db.T.defects[0]; d.status = 'fixed'; d.close_type = null; }); await page.evaluate(() => renderFill()); await page.waitForTimeout(400);
+ok(await page.isHidden('#resign'), '重新開案的不提示要重簽');
+await page.locator('#dlist .item').nth(0).click(); await page.waitForSelector('#sheet:not([hidden])'); await page.waitForTimeout(300);
+ok((await page.textContent('#sh-pass')) === '複驗合格，結案' && (await page.textContent('#sh-closeinfo')).includes('客戶已簽過'), '簽過名的複驗按鈕直接寫結案');
+await page.click('#sh-pass'); await page.waitForSelector('#sheet', { state: 'hidden' });
+T = await page.evaluate(() => window.__db.T.defects[0]);
+ok(T.status === 'closed' && T.signed_name === '王先生', '複驗合格直接結案，保留原簽認人');
 // 需簽認類型：不修 → 確認 → 待簽認 → 簽名結案，close_type 保持不修
 await page.evaluate(() => { const T = window.__db.T; T.defects.push({ ...T.defects[0], id: 9, status: 'todo', close_type: null, close_reason: null, signed_name: null, description: 'nf' }); });
 await page.click('#go').catch(() => {}); await page.evaluate(() => renderFill()); await page.waitForTimeout(400);

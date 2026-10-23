@@ -21,6 +21,7 @@ async function openDefect(row, c) {
     data.forEach((p, i) => (p.deleted_at ? cur.trash : p.kind === 'after' ? cur.after : p.kind === 'sign' ? cur.sign : cur.before)
       .push({ id: p.id, kind: p.kind, path: p.path, url: urls[i], by: p.created_by, deleted_at: p.deleted_at, deleted_by: p.deleted_by }));
     paintPhotos();
+    if (cur.sign.length) { paintStatusText(); paintNext(false); }
   }
 }
 function lastCustomer(unitId) { try { return sessionStorage.getItem('qc-cust-' + unitId) || ''; } catch (e) { return ''; } }
@@ -52,10 +53,8 @@ function paintSheet() {
   $('sh-reason').hidden = true; $('sh-nofix-go').hidden = true; $('sh-reason').value = cur.close_reason || '';
   const st2 = cur.status;
   $('sh-fixed').hidden = st2 !== 'todo';
-  const sign = needSign(cur.inspect_type_id);
   $('sh-pass').hidden = st2 !== 'fixed';
   const nf = isNofix(cur);
-  $('sh-pass').textContent = (nf ? '確認不修' : '複驗合格') + (sign ? '（接著等客戶簽認）' : '，結案');
   $('sh-sign').hidden = st2 !== 'signing';
   $('sh-signname').value = cur.signed_name || ''; $('sh-signdate').value = cur.signed_date || today();
   $('sh-nofix').hidden = st2 !== 'todo';
@@ -63,11 +62,7 @@ function paintSheet() {
   $('sh-reopen').textContent = st2 === 'closed' ? '重新開案（要填原因）' : '複驗不合格／客戶不認可，退回待修';
   $('sh-reopen-reason').hidden = true; $('sh-reopen-go').hidden = true; $('sh-reopen-reason').value = '';
   $('sh-fixdate-wrap').hidden = !(st2 === 'todo' || (st2 === 'fixed' && !nf));
-  $('sh-closeinfo').textContent = st2 === 'closed'
-    ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}${cur.signed_name ? `　簽認：${cur.signed_name} ${cur.signed_date || ''}` : ''}`
-    : st2 === 'signing' ? `${cur.close_type === '不修' ? `已確認不修（原因：${cur.close_reason || ''}）` : '複驗合格'}，等客戶簽認。請客戶確認後按「客戶簽名」，在簽名板簽名就結案；客戶不認可按「退回待修」。`
-    : nf ? `已提出不修（原因：${cur.close_reason || ''}），等驗收人員確認。同意不修按「確認不修」${sign ? '（之後還要客戶簽認）' : '結案'}；不同意按「退回待修」。`
-    : (st2 === 'fixed' ? `廠商已修繕，等複驗。複驗合格就按「複驗合格」${sign ? '（之後還要客戶簽認）' : '結案'}；不合格按「退回待修」。` : '修好後拍「修繕後照片」，再按「修繕完成」；不修的話按「不修」填原因，送驗收人員確認。');
+  paintStatusText();
   $('sh-del').hidden = isNew || !isAdmin() || st2 === 'closed'; $('sh-del').textContent = '刪除';
   $('sh-save').hidden = st2 === 'closed';
   $('sh-trail').textContent = isNew ? '' :
@@ -82,6 +77,18 @@ function paintSheet() {
   paintPhotos();
   paintMini();
 }
+// 需簽認類型：客戶簽過名的（重新開案回來的）複驗合格就直接結案，不用再簽
+function signLeft() { return needSign(cur.inspect_type_id) && !cur.sign.length; }
+function paintStatusText() {
+  const st2 = cur.status, nf = isNofix(cur), sign = signLeft();
+  const signed = needSign(cur.inspect_type_id) && !sign ? '（客戶已簽過，不用再簽）' : '';
+  $('sh-pass').textContent = (nf ? '確認不修' : '複驗合格') + (sign ? '（接著等客戶簽認）' : '，結案');
+  $('sh-closeinfo').textContent = st2 === 'closed'
+    ? `已結案：${cur.close_type}${cur.close_type === '不修' ? '（原因：' + (cur.close_reason || '') + '）' : ''}${cur.signed_name ? `　簽認：${cur.signed_name} ${cur.signed_date || ''}` : ''}`
+    : st2 === 'signing' ? `${cur.close_type === '不修' ? `已確認不修（原因：${cur.close_reason || ''}）` : '複驗合格'}，等客戶簽認。請客戶確認後按「客戶簽名」，在簽名板簽名就結案；客戶不認可按「退回待修」。`
+    : nf ? `已提出不修（原因：${cur.close_reason || ''}），等驗收人員確認。同意不修按「確認不修」${sign ? '（之後還要客戶簽認）' : '結案' + signed}；不同意按「退回待修」。`
+    : (st2 === 'fixed' ? `廠商已修繕，等複驗。複驗合格就按「複驗合格」${sign ? '（之後還要客戶簽認）' : '結案' + signed}；不合格按「退回待修」。` : '修好後拍「修繕後照片」，再按「修繕完成」；不修的話按「不修」填原因，送驗收人員確認。');
+}
 // 表單上方的小平面圖：標出這筆缺失的位置（從報表點進來也看得到）
 async function paintMini() {
   const box = $('sh-mini'); const me = cur; box.querySelectorAll('.pin').forEach(p => p.remove());
@@ -95,7 +102,7 @@ async function paintMini() {
 }
 // 舊缺失：最上面直接說下一步要做什麼，點了捲到修繕區
 function paintNext(isNew) {
-  const b = $('sh-next'), st = cur.status, nf = isNofix(cur), sign = needSign(cur.inspect_type_id), v = isVendor();
+  const b = $('sh-next'), st = cur.status, nf = isNofix(cur), sign = signLeft(), v = isVendor();
   const msg = isNew ? '' : st === 'todo' ? '修好後拍「修繕後照片」，按「修繕完成」'
     : st === 'fixed' && !v ? (nf ? '確認是否同意不修' : '到現場複驗，合格按「複驗合格」') + (sign ? '，再請客戶簽認' : '')
     : st === 'signing' && !v ? '請客戶簽名，就結案' : '';
@@ -285,9 +292,14 @@ $('sh-fixed').onclick = e => guard(e.currentTarget, async () => {
 $('sh-pass').onclick = e => guard(e.currentTarget, async () => {
   await persist();
   const nf = isNofix(cur), ct = nf ? '不修' : null, cr = nf ? cur.close_reason : null;
-  if (needSign(cur.inspect_type_id)) { await setStatus({ status: 'signing', close_type: ct, close_reason: cr }); done((nf ? '已確認不修' : '複驗合格') + '，等客戶簽認'); return; }
-  await setStatus({ status: 'closed', close_type: ct || '複驗合格', close_reason: cr });
-  done(nf ? '已確認不修，結案' : '複驗合格，已結案');
+  const toSign = () => setStatus({ status: 'signing', close_type: ct, close_reason: cr }).then(() => done((nf ? '已確認不修' : '複驗合格') + '，等客戶簽認'));
+  if (signLeft()) return toSign();
+  try { await setStatus({ status: 'closed', close_type: ct || '複驗合格', close_reason: cr }); }
+  catch (er) {   // 還沒執行 25_重新開案免重簽.sql：照舊走待簽認
+    if (needSign(cur.inspect_type_id) && /不允許的狀態變更/.test(errMsg(er))) return toSign();
+    throw er;
+  }
+  done((nf ? '已確認不修' : '複驗合格') + (needSign(cur.inspect_type_id) ? '，客戶已簽過，直接結案' : '，已結案'));
 });
 $('sh-signgo').onclick = e => guard(e.currentTarget, async () => {
   const blob = await openSignPad(); if (!blob) return;
@@ -307,7 +319,7 @@ const reopen = (b, why) => guard(b, async () => {
   if (wasClosed && !why) throw new Error('請填重新開案的原因');
   if (!wasClosed) await persist(false);
   const patch = { status: 'todo', close_type: null, close_reason: null, fixed_date: null };
-  if ('signed_name' in cur) Object.assign(patch, { signed_name: null, signed_date: null });   // 有執行 7_待簽認.sql 才有這兩欄
+  if ('signed_name' in cur && !cur.sign.length) Object.assign(patch, { signed_name: null, signed_date: null });   // 客戶簽過的保留簽認人（有執行 7_待簽認.sql 才有這兩欄）
   if (wasClosed) patch.reopen_reason = why;
   try { await setStatus(patch); }
   catch (er) { if (wasClosed && /reopen_reason/.test(errMsg(er))) throw new Error('資料庫還沒更新，請管理者先執行 20_異動紀錄與結案鎖定.sql'); throw er; }

@@ -199,11 +199,10 @@ async function drawResign() {
     .eq('floor', s.floor).order('at', { ascending: false }).limit(20);
   if (error || !data || !data.length || tok !== fillToken) return;
   const signed = new Set(data.flatMap(r => r.defect_ids)), last = data[0];
+  // 重新開案的不用重簽（複驗合格就直接結案），只提醒簽認後才新增的
   const added = S.unitDefects.filter(d => d.status !== 'closed' && !signed.has(d.id) && d.created_at > last.at).length;
-  const reopened = S.unitDefects.filter(d => d.status !== 'closed' && signed.has(d.id)).length;
-  if (!added && !reopened) return;
-  box.textContent = `上次簽認（${last.signed_date || fmtTime(last.at)}${last.signed_name ? '，' + last.signed_name : ''}）之後，` +
-    [added ? `新增 ${added} 筆` : '', reopened ? `重新開案 ${reopened} 筆` : ''].filter(Boolean).join('、') + '，這些處理完要再請客戶簽認。';
+  if (!added) return;
+  box.textContent = `上次簽認（${last.signed_date || fmtTime(last.at)}${last.signed_name ? '，' + last.signed_name : ''}）之後新增 ${added} 筆，處理完要再請客戶簽認。`;
   box.hidden = false;
 }
 // 頁首統計：點一下只看那個狀態，再點一次看全部
