@@ -51,9 +51,21 @@ ok(page.errors.length === 0, 'JS 錯誤：' + page.errors.join('|'));
 page = await open('boss@x.com', init);
 await page.click('#t-admin'); await page.click('#adm-tabs button[data-tab=user]'); await page.waitForTimeout(200);
 const row = page.locator('.sublist .r', { hasText: 'staff@x.com' });
-ok(await row.locator('input[data-siteadm="1"]').isChecked() && !(await row.locator('input[data-siteadm="2"]').isChecked()), '帳號頁顯示誰是哪個案場的案管理者');
+ok(await row.locator('select').first().inputValue() === 'siteadmin' && await row.locator('input[data-siteadm="1"]').isChecked() && !(await row.locator('input[data-siteadm="2"]').isChecked()), '帳號頁顯示誰是哪個案場的案管理者');
 await row.locator('input[data-siteadm="2"]').check(); await row.locator('button:has-text("儲存")').click(); await page.waitForTimeout(300);
 const us = await page.evaluate(() => window.__db.T.user_sites.filter(x => x.user_id === 'u-staff' && x.is_admin).map(x => x.site_id).sort().join(','));
 ok(us === '1,2', '總管理者把他設成兩個案場的案管理者：' + us);
 ok(page.errors.length === 0, 'JS 錯誤：' + page.errors.join('|'));
+// 一般人改成案管理者：角色選單直接選，預設勾目前案場
+{
+  await page.evaluate(() => { window.__db.T.profiles.push({ id: 'u-x', name: '新人', email: 'x@x.com', role: 'user', active: true, created_at: '2026-10-24' }); window.__db.T.user_sites.push({ user_id: 'u-x', site_id: 1, is_admin: false }); });
+  await page.evaluate(() => reloadAdmin()); await page.waitForTimeout(300);
+  const rx = page.locator('.sublist .r', { hasText: 'x@x.com' });
+  await rx.locator('select').first().selectOption('siteadmin');
+  ok(await rx.locator('input[data-siteadm="1"]').isChecked(), '角色選「案管理者」自動勾目前案場');
+  await rx.locator('button:has-text("儲存")').click(); await page.waitForTimeout(300);
+  const px = await page.evaluate(() => [window.__db.T.profiles.find(p => p.id === 'u-x').role, window.__db.T.user_sites.find(x => x.user_id === 'u-x' && x.site_id === 1).is_admin]);
+  ok(px[0] === 'user' && px[1] === true, '存成一般＋武東二段案管理者：' + px);
+  ok(page.errors.length === 0, 'JS 錯誤：' + page.errors.join('|'));
+}
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);

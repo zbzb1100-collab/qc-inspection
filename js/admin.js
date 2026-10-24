@@ -543,8 +543,8 @@ async function renderMarkEditor(box, plan) {
 
 // ================= 帳號 =================
 function renderUserAdmin(root) {
-  const g = group('user', '帳號', '誰能登入、是一般／管理者／廠商；離職的取消「啟用」'); root.appendChild(g.d);
-  g.body.appendChild(el('div', 'banner', '新增帳號：請同事在登入頁按「申請帳號」，填姓名、Email、密碼。申請的帳號會出現在最上面「待開通」，選好角色、勾「啟用」再按儲存就能登入。離職的取消「啟用」。廠商帳號：角色選「廠商」並選是哪一家（同一批人用不同公司名接案，可以再加「其他公司名」），他只會看到修繕廠商是這幾家的缺失，只能拍修繕後照片、按修繕完成。'));
+  const g = group('user', '帳號', '誰能登入、是總管理者／案管理者／一般／廠商；離職的取消「啟用」'); root.appendChild(g.d);
+  g.body.appendChild(el('div', 'banner', '角色：總管理者管全部案場；案管理者只管勾了「案管理者」的案場的後台；一般只能查驗。新增帳號：請同事在登入頁按「申請帳號」，填姓名、Email、密碼。申請的帳號會出現在最上面「待開通」，選好角色、勾「啟用」再按儲存就能登入。離職的取消「啟用」。廠商帳號：角色選「廠商」並選是哪一家（同一批人用不同公司名接案，可以再加「其他公司名」），他只會看到修繕廠商是這幾家的缺失，只能拍修繕後照片、按修繕完成。'));
   const wait = S.m.profiles.filter(p => p.pending && !p.active);
   if (wait.length) g.body.appendChild(el('div', 'banner warn', `待開通 ${wait.length} 個：${wait.map(p => p.name || p.email).join('、')}。確認是自己人再開通；不認識的不要開。`));
   const list = el('div', 'sublist'); g.body.appendChild(list);
@@ -556,7 +556,11 @@ function renderUserAdmin(root) {
     const self = p.id === S.user.id;
     const r = el('div', 'r'); const nm = el('input'); nm.type = 'text'; nm.value = p.name || ''; nm.placeholder = '顯示名稱'; nm.style.flex = '1'; nm.style.minWidth = '110px';
     const em = el('span', 'hint', (p.pending && !p.active ? '🆕 待開通　' : '') + (p.email || '')); em.style.width = '100%';
-    const role = el('select'); [['user', '一般'], ...(isAdmin() || p.role === 'admin' ? [['admin', '總管理者']] : []), ['vendor', '廠商']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; role.appendChild(o); }); role.value = p.role; role.style.width = 'auto';
+    // 角色：總管理者（全部案場）、案管理者（＝一般＋在案場旁勾「案管理者」，27）、一般、廠商
+    const isSA = p.role === 'user' && S.m.user_sites.some(x => x.user_id === p.id && x.is_admin);
+    const canSA = S.m.user_sites.some(x => 'is_admin' in x) && (isAdmin() || isSA);
+    const role = el('select'); [...(isAdmin() || p.role === 'admin' ? [['admin', '總管理者']] : []), ...(canSA ? [['siteadmin', '案管理者']] : []), ['user', '一般'], ['vendor', '廠商']].forEach(([v, l]) => { const o = el('option', null, l); o.value = v; role.appendChild(o); });
+    role.value = isSA ? 'siteadmin' : p.role; role.style.width = 'auto'; if (isSA && !isAdmin()) role.disabled = true;
     const ven = el('select'); fillSelect(ven, M.list('vendors'), p.vendor_id, '（選哪家廠商）'); ven.style.width = 'auto'; ven.hidden = p.role !== 'vendor';
     // 同一批人用不同公司名接案：主要公司之外可以再加其他公司名（26_廠商帳號多家公司.sql）
     const extra = new Set(S.m.user_vendors.filter(x => x.user_id === p.id).map(x => x.vendor_id));
@@ -593,19 +597,27 @@ function renderUserAdmin(root) {
           admCks.push(a); w.appendChild(al);
           c.addEventListener('change', () => { if (!c.checked) a.checked = false; paintSites(); });
           a.addEventListener('change', () => { if (a.checked) c.checked = true; });
+          c.addEventListener('change', () => { if (c.checked && role.value === 'siteadmin' && !admCks.some(x => x.checked)) a.checked = true; });
         }
         sitesBox.appendChild(w);
       });
       const paintSites = () => {
         const a = role.value === 'admin'; siteCks.forEach(c => { c.disabled = a || (self && !isAdmin()); }); sitesBox.title = a ? '總管理者看得到全部案場' : '';
-        admCks.forEach(x => { x.parentNode.hidden = role.value !== 'user'; x.disabled = !isAdmin() || !siteCks.find(c => c.dataset.site === x.dataset.siteadm).checked; });
+        admCks.forEach(x => { x.parentNode.hidden = role.value !== 'siteadmin'; x.disabled = !isAdmin() || !siteCks.find(c => c.dataset.site === x.dataset.siteadm).checked; });
       };
-      role.addEventListener('change', paintSites); paintSites();
+      role.addEventListener('change', () => {   // 改成案管理者：先幫他勾目前案場（或第一個勾選的案場）
+        if (role.value === 'siteadmin' && !admCks.some(x => x.checked)) {
+          const c = siteCks.find(c => c.checked && Number(c.dataset.site) === S.sel.siteId) || siteCks.find(c => c.checked) || siteCks.find(c => Number(c.dataset.site) === S.sel.siteId);
+          if (c) { c.checked = true; admCks.find(x => x.dataset.siteadm === c.dataset.site).checked = true; }
+        }
+        paintSites();
+      }); paintSites();
       if (p.pending && !p.active && !mine.size) { const c = siteCks.find(c => Number(c.dataset.site) === S.sel.siteId) || siteCks[0]; if (c) c.checked = true; }   // 待開通：預設勾目前案場
     }
     const sv = el('button', 'btn small', '儲存'); sv.onclick = () => guard(sv, async () => {
       if (role.value === 'vendor' && !ven.value) throw new Error('廠商帳號要選是哪一家廠商');
-      const patch = { name: nm.value.trim(), role: role.value, active: ck.checked };
+      if (role.value === 'siteadmin' && !admCks.some(a => a.checked)) throw new Error('案管理者要在「可用案場」裡，勾他負責哪個案場旁邊的「案管理者」');
+      const patch = { name: nm.value.trim(), role: role.value === 'siteadmin' ? 'user' : role.value, active: ck.checked };
       if (p.pending && ck.checked) patch.pending = false;   // 開通了就不再是待開通
       if (role.value === 'vendor' || p.vendor_id != null) patch.vendor_id = role.value === 'vendor' ? Number(ven.value) : null;
       if (siteCks.length && ck.checked && role.value !== 'admin' && !siteCks.some(c => c.checked) && (isAdmin() || p.pending)) throw new Error('請至少勾一個可用案場，不然他登入後什麼都看不到');
@@ -622,7 +634,7 @@ function renderUserAdmin(root) {
         if (add.length) await q(sb.from('user_sites').insert(add));
         if (del.length) await q(sb.from('user_sites').delete().eq('user_id', p.id).in('site_id', del));
         if (isAdmin()) for (const a of admCks) {
-          const sid = Number(a.dataset.siteadm), on = a.checked && role.value === 'user' && siteCks.find(c => Number(c.dataset.site) === sid).checked;
+          const sid = Number(a.dataset.siteadm), on = a.checked && role.value === 'siteadmin' && siteCks.find(c => Number(c.dataset.site) === sid).checked;
           const was = S.m.user_sites.some(x => x.user_id === p.id && x.site_id === sid && x.is_admin);
           if (on !== was && (on || had.has(sid)) && !del.includes(sid)) await q(sb.from('user_sites').update({ is_admin: on }).eq('user_id', p.id).eq('site_id', sid));
         }
