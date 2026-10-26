@@ -112,3 +112,7 @@
   window.__db = { T, files, fnCalls };
   window.supabase = { createClient: () => window.__mockSb };
 })();
+
+// 測試用：拍照後的標註畫面自動按「不標註」（要測標註的測試設 window.__keepAnnotate = true）
+document.addEventListener('DOMContentLoaded', () => new MutationObserver(() => { if (window.__keepAnnotate) return; const b = document.querySelector('.an .an-skip'); if (b) b.click(); })
+  .observe(document.body, { childList: true }));

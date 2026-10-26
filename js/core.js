@@ -213,8 +213,9 @@ async function fetchAll(makeQuery) {
 }
 
 // 看大圖；onDelete 有給才出現「刪除」，要按兩次才算數
-function showViewer(url, onDelete) {
+function showViewer(url, onDelete, onEdit) {
   $('viewer-img').src = url; $('viewer').hidden = false;
+  const ed = $('viewer-edit'); ed.hidden = !onEdit; ed.onclick = e => { e.stopPropagation(); $('viewer').hidden = true; onEdit(); };
   const d = $('viewer-del'); d.hidden = !onDelete; delete d.dataset.arm; d.textContent = '刪除這張照片';
   d.onclick = e => {
     e.stopPropagation();
@@ -222,7 +223,7 @@ function showViewer(url, onDelete) {
     $('viewer').hidden = true; onDelete();
   };
 }
-$('viewer').onclick = e => { if (e.target.id !== 'viewer-del') $('viewer').hidden = true; };
+$('viewer').onclick = e => { if (e.target.id !== 'viewer-del' && e.target.id !== 'viewer-edit') $('viewer').hidden = true; };
 
 const STATUS = { todo: '待修', fixed: '已修繕', signing: '待簽認', closed: '結案' };
 const isNofix = d => d.status === 'fixed' && d.close_type === '不修';   // 提出不修、等複驗確認

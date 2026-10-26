@@ -200,7 +200,8 @@ function photoBox(box, arr, kind) {
     const canDel = cur.status !== 'closed' && (!p.id || isSiteAdmin(cur.site_id) || (p.by === S.user.id && !(isVendor() && kind === 'before')));
     if (p.del) {   // 標記刪除：按「儲存」等動作時才真的刪，之前都能復原
       const u = el('button', 'undo', '待刪除\n點此復原'); u.type = 'button'; u.onclick = () => { p.del = false; paintPhotos(); }; w.appendChild(u);
-    } else im.onclick = () => showViewer(p.url, canDel ? () => { p.del = true; paintPhotos(); toast('照片已標記刪除，按「儲存」才會真的刪；按「取消」或點照片可復原'); } : null);
+    } else im.onclick = () => showViewer(p.url, canDel ? () => { p.del = true; paintPhotos(); toast('照片已標記刪除，按「儲存」才會真的刪；按「取消」或點照片可復原'); } : null,
+      p.blob && !p.id ? async () => { const b = await openAnnotate(p.blob); if (b !== p.blob) { URL.revokeObjectURL(p.url); p.blob = b; p.url = URL.createObjectURL(b); paintPhotos(); } } : null);
     box.appendChild(w); return;
   });
   if (isSiteAdmin(cur.site_id)) cur.trash.filter(p => (p.kind === 'after') === (kind === 'after')).forEach(p => trashTile(box, p));
@@ -213,9 +214,12 @@ function photoBox(box, arr, kind) {
     if (files.length > PHOTO_PICK_MAX) { toast(`一次最多選 ${PHOTO_PICK_MAX} 張，已取前 ${PHOTO_PICK_MAX} 張`); files = files.slice(0, PHOTO_PICK_MAX); }
     const big = files.filter(f => f.size > PHOTO_FILE_MAX || (f.type && !f.type.startsWith('image/')));
     if (big.length) { toast(`${big.length} 個檔案太大或不是照片，已略過`); files = files.filter(f => !big.includes(f)); }
-    for (const f of files) {
-      try { const blob = await compressImage(f); arr.push({ blob, url: URL.createObjectURL(blob) }); }
-      catch (e) { toast(errMsg(e)); }
+    for (const [i, f] of files.entries()) {
+      try {
+        let blob = await compressImage(f);
+        blob = await openAnnotate(blob, files.length > 1 ? `第 ${i + 1}／${files.length} 張` : '');   // 拍完先標註再放進來
+        arr.push({ blob, url: URL.createObjectURL(blob) });
+      } catch (e) { toast(errMsg(e)); }
     }
     paintPhotos();
   };
