@@ -110,7 +110,7 @@ async function renderFill() {
   $('plannote').textContent = '';
   const planBox = $('plan');
   planBox.hidden = !plan;
-  planBox.querySelectorAll('.pin,.mark').forEach(p => p.remove());
+  planBox.querySelectorAll('.pin,.mark,.plan-zoom').forEach(p => p.remove());
   $('marklegend').textContent = '';
   if (!plan) { $('plannote').textContent = '　（這戶還沒有平面圖，管理者可在「管理 → 平面圖」上傳）'; }
   else {
@@ -139,7 +139,7 @@ async function renderFill() {
 }
 function drawPins() {
   const plan = $('plan'); fitMainPlan();
-  plan.querySelectorAll('.pin,.mark').forEach(p => p.remove());
+  plan.querySelectorAll('.pin,.mark,.plan-zoom').forEach(p => p.remove());
   const pl = S.curPlan;
   if (pl) {
     const marks = S.m.plan_spaces.filter(m => m.plan_id === pl.id);
@@ -159,6 +159,24 @@ function drawPins() {
     p.onclick = e => { e.stopPropagation(); openDefect(d, { no: i + 1, onDone: renderFill, canPlace: true, onPlace: startPlacing }); };
     plan.appendChild(p);
   });
+  if (pl) { const z = el('button', 'plan-zoom', '⛶ 放大'); z.type = 'button'; z.onclick = e => { e.stopPropagation(); zoomPlan(); }; plan.appendChild(z); }
+}
+// 全螢幕平面圖：放大後點位置，舊的編號只顯示、點不到
+function zoomPlan() {
+  const pl = S.curPlan; if (!pl || !$('planimg').src) return;
+  const d = S.placing && S.unitDefects.find(x => x.id === S.placing);
+  const marks = S.m.plan_spaces.filter(m => m.plan_id === pl.id).map(m => { const sp = M.get('spaces', m.space_id); return sp && { x: m.x, y: m.y, t: sp.code && sp.code !== '0' ? sp.code : sp.name }; }).filter(Boolean);
+  const pins = S.unitDefects.map((x, i) => x.x != null && x.plan_id === pl.id ? { x: x.x, y: x.y, no: i + 1, status: x.status, hi: false } : null).filter(Boolean);
+  const canAdd = !isVendor() || S.placing;
+  openPlanView({ src: $('planimg').src, marks, pins,
+    hint: d ? `點一下，標出「${M.name('items', d.item_id) || '此缺失'}」的位置` : canAdd ? '兩指放大、拖動；點一下＝在這裡新增缺失' : '兩指放大、拖動',
+    onTap: canAdd ? (x, y) => S.placing ? placeAt(x, y) : openDefect(null, { no: S.unitDefects.length + 1, create: newDefectCtx(x, y), onDone: renderFill }) : null });
+}
+async function placeAt(x, y) {
+  const id = S.placing; S.placing = null; paintPlacing();
+  const { error } = await sb.from('defects').update({ plan_id: S.curPlan.id, x, y }).eq('id', id);
+  if (error) { toast(errMsg(error)); return; }
+  toast('已標上位置'); renderFill();
 }
 function drawUnitSign() {   // 整戶一次簽認：客戶通常是對整張清單簽名
   const box = $('unitsign'); box.innerHTML = '';
@@ -252,23 +270,21 @@ function startPlacing(id) {
   if (!S.curPlan) { toast('這戶沒有平面圖，無法標位置'); return; }
   S.placing = id; paintPlacing();
   $('plan').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  zoomPlan();
 }
 function paintPlacing() {
-  const b = $('placebanner'); b.hidden = !S.placing; b.textContent = '';
+  const b = $('placebanner'); b.hidden = !S.placing; b.textContent = ''; $('plan').classList.toggle('placing', !!S.placing);
   if (!S.placing) return;
   const d = S.unitDefects.find(x => x.id === S.placing);
   b.append(`請在平面圖上點一下，標出「${d ? (M.name('items', d.item_id) || '此缺失') : '此缺失'}」的位置　`);
   const c = el('button', 'iconbtn', '取消'); c.type = 'button'; c.onclick = e => { e.stopPropagation(); S.placing = null; paintPlacing(); }; b.appendChild(c);
 }
 $('plan').onclick = async e => {
+  if (e.target.closest('.plan-zoom')) return;
   if (isVendor() && !e.target.closest('.pin')) return;   // 廠商不能新增缺失
-  if (S.placing && !e.target.closest('.pin')) {
+  if (S.placing) {                                       // 標位置時編號點不到（CSS），點哪裡就標哪裡
     const r = $('planimg').getBoundingClientRect(); if (!r.width) return;
-    const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
-    const id = S.placing; S.placing = null; paintPlacing();
-    const { error } = await sb.from('defects').update({ plan_id: S.curPlan.id, x, y }).eq('id', id);
-    if (error) { toast(errMsg(error)); return; }
-    toast('已標上位置'); renderFill(); return;
+    placeAt(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))); return;
   }
   if (e.target.closest('.pin')) return;
   const r = $('planimg').getBoundingClientRect(); if (!r.width) return;

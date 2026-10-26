@@ -7,7 +7,7 @@
 <script>try{document.documentElement.dataset.skin=localStorage.getItem('qc-skin')||'pro'}catch(e){document.documentElement.dataset.skin='pro'}</script>
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202610241440">
+<link rel="stylesheet" href="css/app.css?v=202610260700">
 </head>
 <body>
 
@@ -103,7 +103,7 @@
           <div style="flex:1;min-width:0"><b id="unitname" style="font-size:17px"></b><span class="hint" id="plannote"></span></div>
         </div>
         <div class="fillsum" id="fillsum"></div>
-        <p class="hint">點圖上位置＝新增一筆；點編號＝修改、複驗。</p>
+        <p class="hint">點圖上位置＝新增一筆；點編號＝修改、複驗。缺失多的地方按圖右上「⛶ 放大」再點。</p>
         <div class="banner" id="placebanner" hidden></div>
         <div class="plan" id="plan"><img id="planimg" alt="戶型平面圖" draggable="false"></div>
         <div class="legend-marks" id="marklegend"></div>
@@ -237,15 +237,16 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202610241440"></script>
-<script src="js/core.js?v=202610241440"></script>
-<script src="js/pick.js?v=202610241440"></script>
-<script src="js/sheet.js?v=202610241440"></script>
-<script src="js/report.js?v=202610241440"></script>
-<script src="js/admin.js?v=202610241440"></script>
-<script src="js/admin_excel.js?v=202610241440"></script>
-<script src="js/admin_import.js?v=202610241440"></script>
-<script src="js/jobs.js?v=202610241440"></script>
-<script src="js/main.js?v=202610241440"></script>
+<script src="config.js?v=202610260700"></script>
+<script src="js/core.js?v=202610260700"></script>
+<script src="js/planview.js?v=202610260700"></script>
+<script src="js/pick.js?v=202610260700"></script>
+<script src="js/sheet.js?v=202610260700"></script>
+<script src="js/report.js?v=202610260700"></script>
+<script src="js/admin.js?v=202610260700"></script>
+<script src="js/admin_excel.js?v=202610260700"></script>
+<script src="js/admin_import.js?v=202610260700"></script>
+<script src="js/jobs.js?v=202610260700"></script>
+<script src="js/main.js?v=202610260700"></script>
 </body>
 </html>

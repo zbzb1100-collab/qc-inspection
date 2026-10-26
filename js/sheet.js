@@ -101,6 +101,7 @@ async function paintMini() {
   $('sh-miniimg').src = url; fitMiniPlan();
   const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
   box.appendChild(pin);
+  box.onclick = () => openPlanView({ src: $('sh-miniimg').src, pins: [{ x: cur.x, y: cur.y, no: ctx.no || cur.id, status: cur.status, hi: true }], hint: '兩指放大、拖動，點兩下放大' });
 }
 // 舊缺失：最上面直接說下一步要做什麼，點了捲到修繕區
 function paintNext(isNew) {

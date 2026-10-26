@@ -98,6 +98,24 @@ ok(Math.abs(d.d[0].x - 0.4) < 0.03 && Math.abs(d.d[0].y - 0.6) < 0.03, '圖上�
 ok(d.p.length === 1 && d.p[0].kind === 'before' && d.f.some(k => k.startsWith('photos/1/before_')), '修繕前照片已上傳');
 ok((await page.locator('#dlist .item').count()) === 1 && (await page.locator('.pin').count()) === 1, '清單與圖釘各 1 筆');
 
+// ---- 平面圖全螢幕放大 ----
+await page.click('#plan .plan-zoom'); await page.waitForSelector('.pv');
+ok((await page.locator('.pv .pin').count()) === 1 && (await page.locator('.pv .pin').evaluate(e => getComputedStyle(e).pointerEvents)) === 'none', '放大畫面顯示舊編號，但點不到');
+await page.click('.pv .pv-btn:has-text("＋")'); await page.click('.pv-close');
+ok(!(await page.locator('.pv').count()), '關閉放大畫面');
+await page.click('#plan .plan-zoom'); await page.waitForSelector('.pv'); await page.waitForTimeout(100);
+{ const v = await page.locator('.pv-vp').boundingBox(); const ib = await page.locator('.pv-stage img').boundingBox();
+  await page.mouse.click(ib.x + ib.width * 0.7, ib.y + ib.height * 0.3); }
+await page.waitForSelector('#sheet:not([hidden])');
+ok(!(await page.locator('.pv').count()), '放大畫面點一下就開新增表單');
+await page.click('#sh-cancel'); await page.waitForTimeout(200);
+await page.click('#dlist .item'); await page.waitForSelector('#sheet:not([hidden])'); await page.click('#sh-place');
+await page.waitForSelector('.pv'); ok((await page.textContent('.pv-hint')).includes('標出'), '重新標位置直接開放大畫面');
+{ const ib = await page.locator('.pv-stage img').boundingBox(); await page.mouse.click(ib.x + ib.width * 0.2, ib.y + ib.height * 0.8); }
+await page.waitForTimeout(300);
+{ const x = await page.evaluate(() => window.__db.T.defects[0]); ok(Math.abs(x.x - 0.2) < 0.03 && Math.abs(x.y - 0.8) < 0.03 && !(await page.locator('.pv').count()), '放大畫面標的新位置已儲存'); }
+await page.evaluate(() => { const d = window.__db.T.defects[0]; d.x = 0.4; d.y = 0.6; }); await page.click('#back'); await page.click('#go'); await page.waitForTimeout(300);
+
 // ---- 修繕流程 ----
 await page.click('.pin'); await page.waitForSelector('#sheet:not([hidden])'); await page.waitForTimeout(200);
 ok(await page.locator('#sh-repair').isVisible(), '既有缺失顯示修繕與複驗區');
