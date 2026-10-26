@@ -457,3 +457,6 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .pv-stage .pin.hi{width:34px;height:34px;font-size:15px;box-shadow:0 0 0 4px rgba(220,38,38,.35)}
 .pv-stage{will-change:transform;backface-visibility:hidden}
 .pv-stage.moving .mark{opacity:.6}
+.pv-move{font-size:15px;padding:0 12px;white-space:nowrap}
+.pv-move.on{background:#f59e0b;border-color:#f59e0b;color:#16212b}
+@media (max-width:430px){.pv-hint{font-size:13px}.pv-btn{min-width:40px;height:40px}}

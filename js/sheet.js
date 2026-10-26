@@ -101,7 +101,10 @@ async function paintMini() {
   $('sh-miniimg').src = url; fitMiniPlan();
   const pin = el('div', 'pin ' + cur.status, String(ctx.no || cur.id)); pin.style.left = (cur.x * 100) + '%'; pin.style.top = (cur.y * 100) + '%';
   box.appendChild(pin);
-  box.onclick = () => openPlanView({ src: $('sh-miniimg').src, pins: [{ x: cur.x, y: cur.y, no: ctx.no || cur.id, status: cur.status, hi: true }], hint: '兩指放大、拖動，點兩下放大' });
+  const canMove = !isVendor() && cur.status !== 'closed';
+  box.onclick = () => openPlanView({ src: $('sh-miniimg').src, pins: [{ x: cur.x, y: cur.y, no: ctx.no || cur.id, status: cur.status, hi: true }],
+    hint: canMove ? '兩指放大、拖動；要移動編號按「改位置」' : '兩指放大、拖動，點兩下放大',
+    onMove: canMove ? async (x, y) => { try { await persist(false); await setStatus({ x, y }); toast('已改位置'); paintMini(); ctx.moved = true; } catch (e) { toast(errMsg(e)); } } : null });
 }
 // 舊缺失：最上面直接說下一步要做什麼，點了捲到修繕區
 function paintNext(isNew) {
@@ -348,7 +351,7 @@ $('sh-del').onclick = e => {
     done('已刪除');
   });
 };
-const sheetCancel = () => { if (cur) { const cb = ctx.onClose; closeSheet(); if (cb) cb(); } };
+const sheetCancel = () => { if (cur) { const cb = ctx.moved ? ctx.onDone || ctx.onClose : ctx.onClose; closeSheet(); if (cb) cb(); } };   // 改過位置：回去要重畫圖
 $('sh-cancel').onclick = sheetCancel; $('sh-back').onclick = sheetCancel;
 
 // 修改歷程：每次新增、修改、刪除照片都由資料庫自動記錄（20_異動紀錄與結案鎖定.sql），這裡只讀

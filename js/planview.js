@@ -1,12 +1,20 @@
 // 平面圖全螢幕：兩指放大、拖動，點一下回傳位置（0~1）；數字固定大小，放大後就分得開
-// openPlanView({ src, pins:[{x,y,no,status,hi}], marks:[{x,y,t}], hint, onTap(x,y) })；沒給 onTap＝只看
+// openPlanView({ src, pins:[{x,y,no,status,hi}], marks:[{x,y,t}], hint, onTap(x,y), onMove(x,y) })
+// 沒給 onTap＝只看；給 onMove＝多一個「改位置」按鈕，按了再點一下就把亮起來的那個編號移過去
 function openPlanView(o) {
   const ov = el('div', 'pv'); ov.setAttribute('role', 'dialog');
   const bar = el('div', 'pv-bar');
   const hint = el('div', 'pv-hint', o.hint || '兩指放大、拖動');
   const zin = el('button', 'pv-btn', '＋'), zout = el('button', 'pv-btn', '－'), close = el('button', 'pv-btn pv-close', '關閉');
   [zin, zout, close].forEach(b => { b.type = 'button'; });
-  bar.append(hint, zout, zin, close);
+  bar.append(hint);
+  let moving = false;
+  if (o.onMove) {
+    const mv = el('button', 'pv-btn pv-move', '📍 改位置'); mv.type = 'button'; bar.appendChild(mv);
+    mv.onclick = () => { moving = !moving; mv.classList.toggle('on', moving); mv.textContent = moving ? '取消' : '📍 改位置';
+      hint.textContent = moving ? '在新的位置點一下' : (o.hint || '兩指放大、拖動'); };
+  }
+  bar.append(zout, zin, close);
   const vp = el('div', 'pv-vp'), stage = el('div', 'pv-stage'), img = el('img');
   img.alt = '平面圖'; img.draggable = false; img.src = o.src;
   stage.appendChild(img); vp.appendChild(stage); ov.append(bar, vp); document.body.appendChild(ov);
@@ -71,17 +79,31 @@ function openPlanView(o) {
     pinch = null; last = null;
     if (moved) { settle(); return; }
     const [cx, cy] = rel(e), now = Date.now();
+    const x = (cx - tx) / (img.naturalWidth * s), y = (cy - ty) / (img.naturalHeight * s), inside = x >= 0 && x <= 1 && y >= 0 && y <= 1;
+    if (moving) { if (inside) { done(); o.onMove(x, y); } return; }
     if (!o.onTap) { if (now - lastTap < 350) zoomAt(s * 2, cx, cy); lastTap = now; return; }   // 只看：點兩下放大
-    const x = (cx - tx) / (img.naturalWidth * s), y = (cy - ty) / (img.naturalHeight * s);
-    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    if (!inside) return;
     done(); o.onTap(x, y);
   };
   vp.addEventListener('pointerup', up); vp.addEventListener('pointercancel', e => { pts.delete(e.pointerId); if (!pts.size) { pinch = null; last = null; settle(); } });
   vp.addEventListener('wheel', e => { e.preventDefault(); const [cx, cy] = rel(e); zoomAt(s * (e.deltaY < 0 ? 1.25 : 0.8), cx, cy); }, { passive: false });
-  ov.addEventListener('gesturestart', e => e.preventDefault());   // iPhone：不要整頁一起縮放
+  // iPhone Safari：兩指會把整個網頁一起放大，按鈕被擠出畫面就回不去 → 放大畫面開著時一律擋掉網頁縮放
+  const stop = e => { if (e.cancelable) e.preventDefault(); };
+  const gs = ['gesturestart', 'gesturechange', 'gestureend'];
+  gs.forEach(t => document.addEventListener(t, stop, { passive: false }));
+  vp.addEventListener('touchstart', e => { if (e.touches.length > 1) stop(e); }, { passive: false });
+  vp.addEventListener('touchmove', stop, { passive: false });
+  const vm = document.querySelector('meta[name=viewport]'), vmOld = vm && vm.content;
+  if (vm) vm.content = vmOld.replace(/,?\s*(maximum-scale|user-scalable)=[^,]*/g, '') + ', maximum-scale=1, user-scalable=no';
   zin.onclick = () => zoomAt(s * 1.6, vp.clientWidth / 2, vp.clientHeight / 2);
   zout.onclick = () => zoomAt(s / 1.6, vp.clientWidth / 2, vp.clientHeight / 2);
-  const done = () => { window.removeEventListener('resize', onResize); cancelAnimationFrame(raf); ov.remove(); };
+  // 手機的「返回」也能關掉放大畫面（不會整個離開網站）
+  let closed = false;
+  try { history.pushState({ pv: 1 }, ''); } catch (e) {}
+  const onPop = () => { if (!closed) { closed = true; finish(); } };
+  window.addEventListener('popstate', onPop);
+  const done = () => { if (closed) return; closed = true; finish(); try { if (history.state && history.state.pv) history.back(); } catch (e) {} };
+  const finish = () => { window.removeEventListener('popstate', onPop); window.removeEventListener('resize', onResize); cancelAnimationFrame(raf); gs.forEach(t => document.removeEventListener(t, stop)); if (vm) vm.content = vmOld; ov.remove(); };
   close.onclick = done;
   return done;
 }
