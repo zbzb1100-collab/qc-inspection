@@ -118,7 +118,7 @@ async function photoCounts(ids) {
 const pos = d => `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`;
 const EXPORT_FIELDS = [   // [key, 欄名, Excel 欄寬, 取值]
   ['id', '編號', 6, d => d.id], ['site', '案場', 10, d => M.name('sites', d.site_id)], ['itype', '檢查類型', 10, d => M.name('inspect_types', d.inspect_type_id)],
-  ['pos', '位置（棟 樓 戶）', 14, pos], ['bld', '棟別', 8, d => M.name('buildings', d.building_id)], ['floor', '樓層', 6, d => d.floor], ['unit', '戶別', 8, d => M.unitCode(d.unit_id)],
+  ['pos', '位置（棟 樓 戶）', 14, pos], ['bld', '棟別', 8, d => M.name('buildings', d.building_id)], ['floor', '樓層', 6, d => d.floor], ['unit', '戶別', 12, d => M.unitCode(d.unit_id)],
   ['cust', '客戶名稱', 12, d => d.customer_name || ''], ['space', '空間', 10, d => M.name('spaces', d.space_id)], ['cat', '工項', 14, d => M.name('categories', d.category_id)],
   ['item', '缺失內容', 28, d => M.name('items', d.item_id)], ['method', '修繕方式', 8, d => M.name('repair_methods', d.repair_method_id)],
   ['fixv', '修繕廠商', 20, d => M.name('vendors', d.fix_vendor_id)], ['respv', '責任廠商', 20, d => M.name('vendors', d.resp_vendor_id)],
@@ -128,7 +128,7 @@ const EXPORT_FIELDS = [   // [key, 欄名, Excel 欄寬, 取值]
   ['cby', '建立者', 10, d => M.userName(d.created_by)], ['cat_at', '建立時間', 16, d => fmtTime(d.created_at)],
   ['uby', '最後修改者', 10, d => M.userName(d.updated_by)], ['uat', '最後修改時間', 16, d => fmtTime(d.updated_at)],
   ['nb', '修繕前照片數', 8, (d, c) => (c[d.id] || {}).before || 0], ['na', '修繕後照片數', 8, (d, c) => (c[d.id] || {}).after || 0]];
-const FIELDS_COMMON = ['id', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'respv', 'planned', 'status', 'desc', 'cat_at'];
+const FIELDS_COMMON = ['id', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'planned', 'status', 'desc', 'cat_at'];
 const FIELDS_KEY = 'qc-export-fields';
 let expFields = (() => { try { const v = JSON.parse(localStorage.getItem(FIELDS_KEY)); if (Array.isArray(v) && v.length) return v.filter(k => EXPORT_FIELDS.some(f => f[0] === k)); } catch (e) {} return FIELDS_COMMON.slice(); })();
 const chosenFields = () => EXPORT_FIELDS.filter(f => expFields.includes(f[0]));
@@ -155,6 +155,18 @@ function drawFieldPicker() {
 drawFieldPicker();
 function needFields() { const f = chosenFields(); if (!f.length) throw new Error('請在「匯出欄位」至少勾一個欄位'); return f; }
 // Excel 列印設定：A4 橫向、寬度縮成一頁、每頁重複標題列
+// 兩種 Excel 共用的外觀：正黑體 12 號、標題列淡藍底、全部框線、文字靠上自動換行
+const XL_FONT = { name: '微軟正黑體', size: 12 }, XL_BORDER = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+function sheetStyle(ws, nCols, valign) {
+  ws.eachRow((r, i) => {
+    for (let c = 1; c <= nCols; c++) {
+      const cell = r.getCell(c); cell.border = XL_BORDER;
+      if (i === 1) { cell.font = { ...XL_FONT, bold: true }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; }
+      else { cell.font = XL_FONT; cell.alignment = { vertical: valign || 'top', wrapText: true }; }
+    }
+  });
+  ws.getRow(1).height = 24;
+}
 function sheetPrintSetup(ws) {
   ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:1',
     margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
@@ -173,11 +185,10 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
   if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單');
   ws.columns = fields.map(f => ({ width: f[2] }));
-  const hr = ws.addRow(fields.map(f => f[1])); hr.font = { bold: true }; hr.alignment = { vertical: 'middle', wrapText: true };
-  hr.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; });
+  ws.addRow(fields.map(f => f[1]));
   const rows = shownRows().slice().sort((a, b) => a.id - b.id);
-  rows.forEach(d => { const r = ws.addRow(fields.map(f => f[3](d, cnt))); r.alignment = { vertical: 'top', wrapText: true }; });
-  ws.eachRow(r => r.eachCell(c => { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; }));
+  rows.forEach(d => ws.addRow(fields.map(f => f[3](d, cnt))));
+  sheetStyle(ws, fields.length);
   sheetPrintSetup(ws);
   downloadXlsx(await wb.xlsx.writeBuffer(), '品質查驗報表');
   toast(`已匯出 ${rows.length} 筆`);
@@ -228,18 +239,20 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   const kindName = { before: '修繕前', after: '修繕後' };
   const photoCols = []; kinds.forEach(k => { const n = Math.max(1, ...rows.map(r => (by[r.id + k] || []).length)); for (let j = 0; j < n; j++) photoCols.push({ kind: k, j }); });
   const head = textHead.concat(photoCols.map(c => `${kindName[c.kind]}照片${c.j + 1}`));
-  ws.addRow(head); ws.getRow(1).font = { bold: true }; ws.getRow(1).alignment = { vertical: 'middle', wrapText: true };
-  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? fields[i][2] : 24 }));
-  const IMG_W = 170, IMG_H = 128;
+  ws.addRow(head);
+  // 照片欄寬剛好放一張照片＋左右留白；照片放在格子正中間，不壓到框線
+  // 文字欄收窄（列夠高，長字會換行），整張才不會因為縮成一頁寬而字太小
+  const IMG_W = 160, IMG_H = 120, PCOL = 24;               // 欄寬 24 字 ≈ 173px
+  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? Math.min(fields[i][2], 16) : PCOL }));
+  rows.forEach(d => ws.addRow(fields.map(f => f[3](d, cnt))));
+  sheetStyle(ws, head.length, 'middle');
   rows.forEach((d, r) => {
-    const row = ws.addRow(fields.map(f => f[3](d, cnt)));
-    row.alignment = { vertical: 'top', wrapText: true };
     const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
-    if (has) row.height = IMG_H * 0.75 + 6;
+    if (has) ws.getRow(r + 2).height = IMG_H * 0.75 + 12;
     photoCols.forEach((c, ci) => {
       const p = (by[d.id + c.kind] || [])[c.j]; const buf = p && imgs.get(p.id); if (!buf) return;
       const id = wb.addImage({ buffer: buf, extension: 'jpeg' });
-      ws.addImage(id, { tl: { col: textHead.length + ci + 0.05, row: r + 1 + 0.05 }, ext: { width: IMG_W, height: IMG_H } });
+      ws.addImage(id, { tl: { col: textHead.length + ci + 0.04, row: r + 1 + 0.04 }, ext: { width: IMG_W, height: IMG_H }, editAs: 'oneCell' });
     });
   });
   sheetPrintSetup(ws);
