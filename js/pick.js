@@ -292,5 +292,7 @@ $('plan').onclick = async e => {
   const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
   openDefect(null, { no: S.unitDefects.length + 1, create: newDefectCtx(x, y), onDone: renderFill });
 };
+// 在頁面上的平面圖用兩指：直接打開全螢幕放大
+$('plan').addEventListener('touchstart', e => { if (e.touches.length > 1 && S.curPlan && !document.querySelector('.pv')) { e.preventDefault(); zoomPlan(); } }, { passive: false });
 $('add-nopos').onclick = () => openDefect(null, { no: S.unitDefects.length + 1, create: newDefectCtx(null, null), onDone: renderFill });
 $('back').onclick = () => { S.placing = null; paintPlacing(); show('pick'); };

@@ -5,8 +5,8 @@ function openPlanView(o) {
   const ov = el('div', 'pv'); ov.setAttribute('role', 'dialog');
   const bar = el('div', 'pv-bar');
   const hint = el('div', 'pv-hint', o.hint || '兩指放大、拖動');
-  const zin = el('button', 'pv-btn', '＋'), zout = el('button', 'pv-btn', '－'), close = el('button', 'pv-btn pv-close', '關閉');
-  [zin, zout, close].forEach(b => { b.type = 'button'; });
+  const zin = el('button', 'pv-btn', '＋'), zout = el('button', 'pv-btn', '－'), all = el('button', 'pv-btn pv-all', '全圖'), close = el('button', 'pv-btn pv-close', '關閉');
+  [zin, zout, all, close].forEach(b => { b.type = 'button'; });
   bar.append(hint);
   let moving = false;
   if (o.onMove) {
@@ -14,7 +14,7 @@ function openPlanView(o) {
     mv.onclick = () => { moving = !moving; mv.classList.toggle('on', moving); mv.textContent = moving ? '取消' : '📍 改位置';
       hint.textContent = moving ? '在新的位置點一下' : (o.hint || '兩指放大、拖動'); };
   }
-  bar.append(zout, zin, close);
+  bar.append(all, zout, zin, close);
   const vp = el('div', 'pv-vp'), stage = el('div', 'pv-stage'), img = el('img');
   img.alt = '平面圖'; img.draggable = false; img.src = o.src;
   stage.appendChild(img); vp.appendChild(stage); ov.append(bar, vp); document.body.appendChild(ov);
@@ -37,15 +37,18 @@ function openPlanView(o) {
   };
   const lim = v => Math.min(base * 10, Math.max(base, v));
   const zoomAt = (ns, cx, cy) => { ns = lim(ns); tx = cx - (cx - tx) * ns / s; ty = cy - (cy - ty) * ns / s; s = ns; clamp(); apply(); };
-  const fit = () => {
+  const fit = (keep) => {
     if (!img.naturalWidth) return;
+    if (keep === true && base) {                         // 畫面大小變了（例如 Safari 網址列收合）：保留目前的放大
+      base = Math.min(vp.clientWidth / img.naturalWidth, vp.clientHeight / img.naturalHeight); s = lim(s); clamp(); apply(); return;
+    }
     stage.style.width = img.naturalWidth + 'px'; stage.style.height = img.naturalHeight + 'px';
     base = Math.min(vp.clientWidth / img.naturalWidth, vp.clientHeight / img.naturalHeight); s = base; tx = ty = 0; clamp(); apply();
     const f = (o.pins || []).find(p => p.hi);            // 看單筆缺失：直接放大到那個點
     if (f) zoomAt(base * 2.5, tx + f.x * img.naturalWidth * s, ty + f.y * img.naturalHeight * s);
   };
   img.complete && img.naturalWidth ? fit() : img.addEventListener('load', fit);
-  const onResize = () => fit(); window.addEventListener('resize', onResize);
+  const onResize = () => fit(true); window.addEventListener('resize', onResize);
 
   // 手勢：一指拖動、兩指縮放（同時可以拖）；沒移動就放開＝點一下
   const pts = new Map(); let moved = false, last = null, pinch = null, lastTap = 0;
@@ -87,14 +90,10 @@ function openPlanView(o) {
   };
   vp.addEventListener('pointerup', up); vp.addEventListener('pointercancel', e => { pts.delete(e.pointerId); if (!pts.size) { pinch = null; last = null; settle(); } });
   vp.addEventListener('wheel', e => { e.preventDefault(); const [cx, cy] = rel(e); zoomAt(s * (e.deltaY < 0 ? 1.25 : 0.8), cx, cy); }, { passive: false });
-  // iPhone Safari：兩指會把整個網頁一起放大，按鈕被擠出畫面就回不去 → 放大畫面開著時一律擋掉網頁縮放
   const stop = e => { if (e.cancelable) e.preventDefault(); };
-  const gs = ['gesturestart', 'gesturechange', 'gestureend'];
-  gs.forEach(t => document.addEventListener(t, stop, { passive: false }));
   vp.addEventListener('touchstart', e => { if (e.touches.length > 1) stop(e); }, { passive: false });
   vp.addEventListener('touchmove', stop, { passive: false });
-  const vm = document.querySelector('meta[name=viewport]'), vmOld = vm && vm.content;
-  if (vm) vm.content = vmOld.replace(/,?\s*(maximum-scale|user-scalable)=[^,]*/g, '') + ', maximum-scale=1, user-scalable=no';
+  all.onclick = () => { s = base; clamp(); apply(); };
   zin.onclick = () => zoomAt(s * 1.6, vp.clientWidth / 2, vp.clientHeight / 2);
   zout.onclick = () => zoomAt(s / 1.6, vp.clientWidth / 2, vp.clientHeight / 2);
   // 手機的「返回」也能關掉放大畫面（不會整個離開網站）
@@ -103,7 +102,11 @@ function openPlanView(o) {
   const onPop = () => { if (!closed) { closed = true; finish(); } };
   window.addEventListener('popstate', onPop);
   const done = () => { if (closed) return; closed = true; finish(); try { if (history.state && history.state.pv) history.back(); } catch (e) {} };
-  const finish = () => { window.removeEventListener('popstate', onPop); window.removeEventListener('resize', onResize); cancelAnimationFrame(raf); gs.forEach(t => document.removeEventListener(t, stop)); if (vm) vm.content = vmOld; ov.remove(); };
+  const finish = () => { window.removeEventListener('popstate', onPop); window.removeEventListener('resize', onResize); cancelAnimationFrame(raf); ov.remove(); };
   close.onclick = done;
   return done;
 }
+
+// iPhone Safari 兩指會把整個網頁放大，放大後按鈕跑出畫面、縮不回來 → 整個系統都不讓網頁縮放（平面圖用上面的放大畫面）
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => { if (e.cancelable) e.preventDefault(); }, { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches && e.touches.length > 1 && e.cancelable) e.preventDefault(); }, { passive: false });

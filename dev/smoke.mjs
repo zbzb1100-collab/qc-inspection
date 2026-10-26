@@ -105,7 +105,6 @@ await page.click('.pv .pv-btn:has-text("＋")'); await page.click('.pv-close');
 ok(!(await page.locator('.pv').count()), '關閉放大畫面');
 await page.click('#plan .plan-zoom'); await page.waitForSelector('.pv'); await page.evaluate(() => history.back()); await page.waitForTimeout(300);
 ok(!(await page.locator('.pv').count()) && await page.locator('#s-fill').isVisible(), '手機返回鍵關掉放大畫面，還在填寫頁');
-ok((await page.getAttribute('meta[name=viewport]', 'content')) === 'width=device-width,initial-scale=1,viewport-fit=cover', '關掉後恢復網頁縮放設定');
 await page.click('#plan .plan-zoom'); await page.waitForSelector('.pv'); await page.waitForTimeout(100);
 { const v = await page.locator('.pv-vp').boundingBox(); const ib = await page.locator('.pv-stage img').boundingBox();
   await page.mouse.click(ib.x + ib.width * 0.7, ib.y + ib.height * 0.3); }
