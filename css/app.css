@@ -477,3 +477,10 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .an-color{width:44px;height:44px;border-radius:50%;border:3px solid rgba(255,255,255,.35);cursor:pointer}
 .an-color.on{border-color:#fff;box-shadow:0 0 0 3px rgba(255,255,255,.35)}
 .an-tip{text-align:center;font-size:13px;color:#cfe3f0;padding:4px 12px 10px;background:#16212b}
+/* 報表：匯出欄位勾選 */
+.fieldpick{border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+.fieldpick summary{cursor:pointer;font-weight:700;padding:4px 0}
+.fieldpick[open] summary{margin-bottom:8px}
+.fieldgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px 12px;margin-top:8px}
+.fieldgrid label{display:flex;align-items:center;gap:6px;font-size:15px;min-height:32px}
+.btn.small{padding:6px 12px;font-size:14px}

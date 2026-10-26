@@ -158,10 +158,22 @@ await dp2.saveAs('/tmp/claude-0/xl/photo2.xlsx');
 const hd2 = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/photo2.xlsx').Sheets['缺失清單（含照片）'], { header: 1 })[0];
 ok(hd2.includes('修繕前照片1') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
 
+// ---- 匯出欄位自選 ----
+await page.click('#f-fields summary');
+await page.click('#f-fields button:has-text("全不選")'); await page.click('#f-export'); await page.waitForTimeout(300);
+ok((await page.textContent('#toast')).includes('至少勾一個欄位'), '沒勾欄位不能匯出');
+for (const k of ['id', 'pos', 'item', 'status']) await page.check(`#f-fields input[data-field=${k}]`);
+{ const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export')]); await dl.saveAs('/tmp/claude-0/xl/fields.xlsx');
+  const wf = XLSX.readFile('/tmp/claude-0/xl/fields.xlsx'); const h = XLSX.utils.sheet_to_json(wf.Sheets['缺失清單'], { header: 1 })[0];
+  ok(h.join() === '編號,位置（棟 樓 戶）,缺失內容,狀態', '只匯出勾的欄位，順序固定：' + h.join());
+  const xml = (await import('child_process')).execSync('unzip -p /tmp/claude-0/xl/fields.xlsx xl/worksheets/sheet1.xml').toString();
+  ok(xml.includes('orientation="landscape"') && xml.includes('fitToHeight="0"'), 'Excel 列印設定：橫向、寬度縮成一頁'); }
+ok((await page.evaluate(() => localStorage.getItem('qc-export-fields'))) === '["id","pos","item","status"]', '勾的欄位記在這台裝置');
 // ---- PDF（列印版面）----
 await page.evaluate(() => { window.print = () => { window.__printSnap = document.getElementById('print-root').innerHTML; window.__printed = (window.__printed || 0) + 1; }; });
 await page.click('#f-pdf'); await page.waitForTimeout(300);
 ok(await page.evaluate(() => window.__printed === 1 && window.__printSnap.includes('<table') && window.__printSnap.includes('品質查驗報表')), 'PDF（文字）：產生表格版面並呼叫列印');
+ok(await page.evaluate(() => (window.__printSnap.match(/<th>/g) || []).length === 4), 'PDF（文字）也只有勾的 4 欄');
 await page.check('#f-ph-after');
 await page.click('#f-pdf-photo'); await page.waitForTimeout(800);
 ok(await page.evaluate(() => window.__printed === 2 && (window.__printSnap.match(/<img/g) || []).length === 3 && window.__printSnap.includes('修繕後 1')), 'PDF（含照片）：每筆缺失一張卡片，3 張照片都在');

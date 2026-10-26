@@ -18,6 +18,7 @@ await page.route('**/*', r => {
   const u = r.request().url();
   if (u.startsWith('file://')) return r.continue();
   if (u.includes('supabase')) return r.fulfill({ contentType: 'application/javascript', body: '' });
+  if (u.includes('exceljs')) return r.fulfill({ contentType: 'application/javascript', body: fs.readFileSync('/tmp/claude-0/xl/node_modules/exceljs/dist/exceljs.min.js', 'utf8') });
   if (u.includes('xlsx')) return r.fulfill({ contentType: 'application/javascript', body: `window.XLSX={utils:{aoa_to_sheet:a=>({a}),book_new:()=>({}),book_append_sheet:()=>{}},writeFile:(wb,n)=>{window.__xlsx={n}}}` });
   return r.fulfill({ contentType: 'text/css', body: '' });
 });
@@ -191,8 +192,7 @@ await page.click('#f-clear'); await page.waitForTimeout(300);
 ok((await page.textContent('#f-fixv .ms-btn')) === '全部修繕廠商', '清除條件後回到全部');
 await pickF('respv', '3'); await page.click('#f-go'); await page.waitForTimeout(300);
 ok((await page.textContent('#st-all')) === '2', '責任廠商篩選');
-await page.click('#f-export'); await page.waitForTimeout(300);
-ok(!!(await page.evaluate(() => window.__xlsx)) && (await page.evaluate(() => window.__xlsx.n)).endsWith('.xlsx'), '匯出 Excel 被呼叫');
+{ const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export')]); ok(!!dl, '匯出 Excel 有下載'); }
 
 // ---- 管理：清單（分頁＋表格）----
 await page.click('#t-admin'); await page.click('#adm-tabs button[data-tab=vendor]');

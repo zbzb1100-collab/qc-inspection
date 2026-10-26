@@ -114,24 +114,72 @@ async function photoCounts(ids) {
   }
   return cnt;
 }
+// ---------- 匯出欄位：自己勾要哪些欄，每台裝置記住；Excel、PDF 都照這個 ----------
+const pos = d => `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`;
+const EXPORT_FIELDS = [   // [key, 欄名, Excel 欄寬, 取值]
+  ['id', '編號', 6, d => d.id], ['site', '案場', 10, d => M.name('sites', d.site_id)], ['itype', '檢查類型', 10, d => M.name('inspect_types', d.inspect_type_id)],
+  ['pos', '位置（棟 樓 戶）', 14, pos], ['bld', '棟別', 8, d => M.name('buildings', d.building_id)], ['floor', '樓層', 6, d => d.floor], ['unit', '戶別', 8, d => M.unitCode(d.unit_id)],
+  ['cust', '客戶名稱', 12, d => d.customer_name || ''], ['space', '空間', 10, d => M.name('spaces', d.space_id)], ['cat', '工項', 14, d => M.name('categories', d.category_id)],
+  ['item', '缺失內容', 28, d => M.name('items', d.item_id)], ['method', '修繕方式', 8, d => M.name('repair_methods', d.repair_method_id)],
+  ['fixv', '修繕廠商', 20, d => M.name('vendors', d.fix_vendor_id)], ['respv', '責任廠商', 20, d => M.name('vendors', d.resp_vendor_id)],
+  ['planned', '預計修繕日', 12, d => d.planned_date || ''], ['fixed', '實際修繕日', 12, d => d.fixed_date || ''], ['status', '狀態', 10, d => statusText(d)],
+  ['ctype', '結案方式', 10, d => d.close_type || ''], ['reason', '不修原因', 20, d => d.close_reason || ''], ['signer', '簽認人', 10, d => d.signed_name || ''],
+  ['sdate', '簽認日期', 12, d => d.signed_date || ''], ['desc', '缺失說明', 30, d => d.description || ''],
+  ['cby', '建立者', 10, d => M.userName(d.created_by)], ['cat_at', '建立時間', 16, d => fmtTime(d.created_at)],
+  ['uby', '最後修改者', 10, d => M.userName(d.updated_by)], ['uat', '最後修改時間', 16, d => fmtTime(d.updated_at)],
+  ['nb', '修繕前照片數', 8, (d, c) => (c[d.id] || {}).before || 0], ['na', '修繕後照片數', 8, (d, c) => (c[d.id] || {}).after || 0]];
+const FIELDS_COMMON = ['id', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'respv', 'planned', 'status', 'desc', 'cat_at'];
+const FIELDS_KEY = 'qc-export-fields';
+let expFields = (() => { try { const v = JSON.parse(localStorage.getItem(FIELDS_KEY)); if (Array.isArray(v) && v.length) return v.filter(k => EXPORT_FIELDS.some(f => f[0] === k)); } catch (e) {} return FIELDS_COMMON.slice(); })();
+const chosenFields = () => EXPORT_FIELDS.filter(f => expFields.includes(f[0]));
+function drawFieldPicker() {
+  const box = $('f-fields'); if (!box) return; box.innerHTML = '';
+  const sum = el('summary', null, `匯出欄位：已選 ${expFields.length} 個（點此更改）`); box.appendChild(sum);
+  const save = () => { try { localStorage.setItem(FIELDS_KEY, JSON.stringify(expFields)); } catch (e) {} sum.textContent = `匯出欄位：已選 ${expFields.length} 個（點此更改）`; };
+  const btns = el('div', 'row'); btns.style.gap = '8px';
+  [['常用', FIELDS_COMMON], ['全部', EXPORT_FIELDS.map(f => f[0])], ['全不選', []]].forEach(([n, keys]) => {
+    const b = el('button', 'btn ghost small', n); b.type = 'button'; b.onclick = () => { expFields = keys.slice(); save(); paint(); }; btns.appendChild(b);
+  });
+  const grid = el('div', 'fieldgrid');
+  box.append(btns, grid, el('p', 'hint', '勾的欄位會用在「匯出 Excel」和「匯出 PDF（文字）」；含照片的匯出另外附照片欄。順序固定照上面排列。'));
+  const paint = () => {
+    grid.innerHTML = '';
+    EXPORT_FIELDS.forEach(([k, n]) => {
+      const lab = el('label'); const c = el('input'); c.type = 'checkbox'; c.checked = expFields.includes(k); c.dataset.field = k;
+      c.onchange = () => { expFields = EXPORT_FIELDS.map(f => f[0]).filter(x => x === k ? c.checked : expFields.includes(x)); save(); };
+      lab.append(c, ' ' + n); grid.appendChild(lab);
+    });
+  };
+  paint();
+}
+drawFieldPicker();
+function needFields() { const f = chosenFields(); if (!f.length) throw new Error('請在「匯出欄位」至少勾一個欄位'); return f; }
+// Excel 列印設定：A4 橫向、寬度縮成一頁、每頁重複標題列
+function sheetPrintSetup(ws) {
+  ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:1',
+    margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
+  ws.headerFooter = { oddFooter: '第 &P 頁，共 &N 頁' };
+  ws.views = [{ state: 'frozen', ySplit: 1 }];
+}
+function downloadXlsx(buf, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  const d0 = new Date(); a.download = `${name}_${d0.getFullYear()}${pad(d0.getMonth() + 1)}${pad(d0.getDate())}.xlsx`; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
 $('f-export').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
-  if (!window.XLSX) throw new Error('匯出元件尚未載入，請稍後再試');
-  const cnt = await photoCounts(shownRows().map(r => r.id));
-  const head = ['編號', '案場', '檢查類型', '棟別', '樓層', '戶別', '客戶名稱', '空間', '工項', '缺失內容', '修繕方式', '修繕廠商', '責任廠商',
-    '預計修繕日', '實際修繕日', '狀態', '結案方式', '不修原因', '簽認人', '簽認日期', '缺失說明', '建立者', '建立時間', '最後修改者', '最後修改時間', '修繕前照片數', '修繕後照片數'];
-  const rows = shownRows().slice().sort((a, b) => a.id - b.id).map(d => [
-    d.id, M.name('sites', d.site_id), M.name('inspect_types', d.inspect_type_id), M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id),
-    d.customer_name || '', M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
-    M.name('repair_methods', d.repair_method_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id),
-    d.planned_date || '', d.fixed_date || '', statusText(d), d.close_type || '', d.close_reason || '', d.signed_name || '', d.signed_date || '', d.description || '',
-    M.userName(d.created_by), fmtTime(d.created_at), M.userName(d.updated_by), fmtTime(d.updated_at),
-    (cnt[d.id] || {}).before || 0, (cnt[d.id] || {}).after || 0]);
-  const ws = XLSX.utils.aoa_to_sheet([head, ...rows]);
-  ws['!cols'] = head.map((h, i) => ({ wch: [6, 10, 10, 8, 6, 8, 12, 10, 14, 30, 8, 22, 22, 12, 12, 8, 10, 20, 10, 12, 30, 10, 16, 10, 16, 8, 8][i] }));
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, '缺失清單');
-  const d = new Date();
-  XLSX.writeFile(wb, `品質查驗報表_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.xlsx`);
+  const fields = needFields();
+  const cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(shownRows().map(r => r.id)) : {};
+  if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
+  const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單');
+  ws.columns = fields.map(f => ({ width: f[2] }));
+  const hr = ws.addRow(fields.map(f => f[1])); hr.font = { bold: true }; hr.alignment = { vertical: 'middle', wrapText: true };
+  hr.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; });
+  const rows = shownRows().slice().sort((a, b) => a.id - b.id);
+  rows.forEach(d => { const r = ws.addRow(fields.map(f => f[3](d, cnt))); r.alignment = { vertical: 'top', wrapText: true }; });
+  ws.eachRow(r => r.eachCell(c => { c.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }; }));
+  sheetPrintSetup(ws);
+  downloadXlsx(await wb.xlsx.writeBuffer(), '品質查驗報表');
   toast(`已匯出 ${rows.length} 筆`);
 });
 
@@ -175,17 +223,16 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   await Promise.all([worker(), worker(), worker(), worker(), worker()]);
 
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單（含照片）');
-  const textHead = ['編號', '棟別', '樓層', '戶別', '空間', '工項', '缺失內容', '修繕廠商', '責任廠商', '狀態', '預計修繕日', '實際修繕日', '缺失說明'];
+  const fields = needFields(), cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(ids) : {};
+  const textHead = fields.map(f => f[1]);
   const kindName = { before: '修繕前', after: '修繕後' };
   const photoCols = []; kinds.forEach(k => { const n = Math.max(1, ...rows.map(r => (by[r.id + k] || []).length)); for (let j = 0; j < n; j++) photoCols.push({ kind: k, j }); });
   const head = textHead.concat(photoCols.map(c => `${kindName[c.kind]}照片${c.j + 1}`));
   ws.addRow(head); ws.getRow(1).font = { bold: true }; ws.getRow(1).alignment = { vertical: 'middle', wrapText: true };
-  const widths = [6, 8, 6, 8, 10, 14, 28, 20, 20, 8, 12, 12, 24];
-  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? widths[i] : 24 }));
+  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? fields[i][2] : 24 }));
   const IMG_W = 170, IMG_H = 128;
   rows.forEach((d, r) => {
-    const row = ws.addRow([d.id, M.name('buildings', d.building_id), d.floor, M.unitCode(d.unit_id), M.name('spaces', d.space_id), M.name('categories', d.category_id),
-      M.name('items', d.item_id), M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), statusText(d), d.planned_date || '', d.fixed_date || '', d.description || '']);
+    const row = ws.addRow(fields.map(f => f[3](d, cnt)));
     row.alignment = { vertical: 'top', wrapText: true };
     const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
     if (has) row.height = IMG_H * 0.75 + 6;
@@ -195,11 +242,8 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
       ws.addImage(id, { tl: { col: textHead.length + ci + 0.05, row: r + 1 + 0.05 }, ext: { width: IMG_W, height: IMG_H } });
     });
   });
-  ws.views = [{ state: 'frozen', ySplit: 1 }];
-  const buf = await wb.xlsx.writeBuffer();
-  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
-  const d0 = new Date(); a.download = `品質查驗報表_含照片_${d0.getFullYear()}${pad(d0.getMonth() + 1)}${pad(d0.getDate())}.xlsx`; document.body.appendChild(a); a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  sheetPrintSetup(ws);
+  downloadXlsx(await wb.xlsx.writeBuffer(), '品質查驗報表_含照片');
   toast(`已匯出 ${rows.length} 筆、${imgs.size} 張照片`);
 });
 
@@ -236,14 +280,13 @@ $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const root = $('print-root'); const rows = shownRows().slice().sort((a, b) => a.id - b.id);
   printHead(root, '品質查驗報表', rows.length);
+  const fields = needFields(), cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(rows.map(r => r.id)) : {};
   const t = el('table'); const th = el('thead'); const hr = el('tr');
-  ['編號', '戶', '空間', '工項', '缺失內容', '修繕廠商', '責任廠商', '預計／實際修繕', '狀態', '缺失說明'].forEach(h => hr.appendChild(el('th', null, h)));
+  fields.forEach(f => hr.appendChild(el('th', null, f[1])));
   th.appendChild(hr); t.appendChild(th); const tb = el('tbody');
   rows.forEach(d => {
     const tr = el('tr');
-    [d.id, `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`, M.name('spaces', d.space_id), M.name('categories', d.category_id), M.name('items', d.item_id),
-      M.name('vendors', d.fix_vendor_id), M.name('vendors', d.resp_vendor_id), `${d.planned_date || '—'}\n${d.fixed_date || '—'}`, statusText(d) + (d.close_type && !isNofix(d) ? `（${d.close_type}）` : ''), d.description || ''
-    ].forEach(v => { const td = el('td', null, String(v)); td.style.whiteSpace = 'pre-line'; tr.appendChild(td); });
+    fields.forEach(f => { const td = el('td', null, String(f[3](d, cnt) ?? '')); td.style.whiteSpace = 'pre-line'; tr.appendChild(td); });
     tb.appendChild(tr);
   });
   t.appendChild(tb); root.appendChild(t);
