@@ -169,6 +169,17 @@ for (const k of ['id', 'pos', 'item', 'status']) await page.check(`#f-fields inp
   const xml = (await import('child_process')).execSync('unzip -p /tmp/claude-0/xl/fields.xlsx xl/worksheets/sheet1.xml').toString();
   ok(xml.includes('orientation="landscape"') && xml.includes('fitToHeight="0"'), 'Excel 列印設定：橫向、寬度縮成一頁'); }
 ok((await page.evaluate(() => localStorage.getItem('qc-export-fields'))) === '["id","pos","item","status"]', '勾的欄位記在這台裝置');
+// ---- 匯出排序 ----
+await page.click('#f-sort summary');
+ok((await page.textContent('#f-sort summary')).includes('編號↑'), '預設照編號排');
+await page.selectOption('#f-sort select[data-sort-dir="0"]', 'desc');
+await page.selectOption('#f-sort select[data-sort="1"]', 'floor');
+ok(await page.locator('#f-sort select[data-sort="2"]').count() === 1, '選了第二排序才出現第三排序');
+{ const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export')]); await dl.saveAs('/tmp/claude-0/xl/sort.xlsx');
+  const rs = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/sort.xlsx').Sheets['缺失清單'], { header: 1 }).slice(1).map(r => r[0]);
+  ok(rs.length > 1 && rs.every((v, i) => !i || rs[i - 1] > v), '編號倒序匯出：' + rs.join()); }
+ok((await page.evaluate(() => localStorage.getItem('qc-export-sort'))) === '[["id","desc"],["floor","asc"]]', '排序記在這台裝置');
+ok(await page.evaluate(() => [floorKey('B1'), floorKey('2F'), floorKey('19F'), floorKey('R1F'), floorKey('PRF')].every((v, i, a) => !i || a[i - 1] < v)), '樓層照數字排：B1 < 2F < 19F < R1F < PRF');
 // ---- PDF（列印版面）----
 await page.evaluate(() => { window.print = () => { window.__printSnap = document.getElementById('print-root').innerHTML; window.__printed = (window.__printed || 0) + 1; }; });
 await page.click('#f-pdf'); await page.waitForTimeout(300);

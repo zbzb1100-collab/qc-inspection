@@ -154,6 +154,58 @@ function drawFieldPicker() {
 }
 drawFieldPicker();
 function needFields() { const f = chosenFields(); if (!f.length) throw new Error('請在「匯出欄位」至少勾一個欄位'); return f; }
+// ---------- 匯出排序：第一、第二、第三排序，每台裝置記住；四種匯出都照這個 ----------
+const listIdx = t => { const m = new Map(); (S.all && S.all[t] ? S.all[t] : S.m[t]).slice().sort(bySort).forEach((r, i) => m.set(r.id, i)); return m; };
+// 樓層：B2 < B1 < 1F < 2F … < 19F < R1F < PRF（照數字大小，不是照字面）
+const floorKey = f => { f = String(f || '').toUpperCase(); let m;
+  if ((m = f.match(/^B(\d+)/))) return -Number(m[1]);
+  if ((m = f.match(/^(\d+)/))) return Number(m[1]);
+  if ((m = f.match(/^R(\d*)/))) return 1000 + Number(m[1] || 0);
+  if (f.startsWith('PR')) return 2000; return f ? 3000 : -9999; };
+const STATUS_ORDER = d => isNofix(d) ? 1 : ({ todo: 0, fixed: 2, signing: 3, closed: 4 })[d.status] ?? 9;
+const SORT_KEYS = [   // [key, 名稱, 產生排序用的取值函式（每次匯出前建一次對照表）]
+  ['id', '編號', () => d => d.id], ['cat_at', '建立時間', () => d => d.created_at || ''], ['uat', '最後修改時間', () => d => d.updated_at || ''],
+  ['itype', '檢查類型', () => { const m = listIdx('inspect_types'); return d => m.get(d.inspect_type_id) ?? 1e9; }],
+  ['bld', '棟別', () => { const m = listIdx('buildings'); return d => m.get(d.building_id) ?? 1e9; }],
+  ['floor', '樓層', () => d => floorKey(d.floor)],
+  ['unit', '戶別', () => { const m = listIdx('units'); return d => m.get(d.unit_id) ?? 1e9; }],
+  ['space', '空間', () => { const m = listIdx('spaces'); return d => m.get(d.space_id) ?? 1e9; }],
+  ['cat', '工項', () => { const m = listIdx('categories'); return d => m.get(d.category_id) ?? 1e9; }],
+  ['item', '缺失內容', () => { const m = listIdx('items'); return d => m.get(d.item_id) ?? 1e9; }],
+  ['fixv', '修繕廠商', () => d => M.name('vendors', d.fix_vendor_id)], ['respv', '責任廠商', () => d => M.name('vendors', d.resp_vendor_id)],
+  ['planned', '預計修繕日', () => d => d.planned_date || '9999'], ['fixed', '實際修繕日', () => d => d.fixed_date || '9999'],
+  ['status', '狀態', () => STATUS_ORDER]];
+const SORT_KEY_STORE = 'qc-export-sort';
+let expSort = (() => { try { const v = JSON.parse(localStorage.getItem(SORT_KEY_STORE)); if (Array.isArray(v) && v.length && v.every(x => SORT_KEYS.some(k => k[0] === x[0]))) return v; } catch (e) {} return [['id', 'asc']]; })();
+const sortText = () => expSort.map(([k, dir]) => SORT_KEYS.find(x => x[0] === k)[1] + (dir === 'desc' ? '↓' : '↑')).join(' → ');
+function sortedRows() {
+  const fns = expSort.map(([k, dir]) => [SORT_KEYS.find(x => x[0] === k)[2](), dir === 'desc' ? -1 : 1]);
+  const cmp = (a, b) => typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'zh-Hant', { numeric: true });
+  return shownRows().slice().sort((a, b) => { for (const [f, s] of fns) { const c = cmp(f(a), f(b)); if (c) return c * s; } return a.id - b.id; });
+}
+function drawSortPicker() {
+  const box = $('f-sort'); if (!box) return; box.innerHTML = '';
+  const sum = el('summary', null, ''); box.appendChild(sum);
+  const save = () => { try { localStorage.setItem(SORT_KEY_STORE, JSON.stringify(expSort)); } catch (e) {} sum.textContent = `匯出排序：${sortText()}（點此更改）`; };
+  const rows = el('div', 'sortrows'); box.append(rows, el('p', 'hint', '先照第一排序排，一樣的再照第二、第三排序。四種匯出都照這個順序。'));
+  const paint = () => {
+    rows.innerHTML = '';
+    ['第一排序', '第二排序', '第三排序'].forEach((lab, i) => {
+      if (i > expSort.length) return;                         // 前一層沒選，後面先不出現
+      const cur = expSort[i], r = el('div', 'sortrow'), k = el('select'), dir = el('select');
+      k.dataset.sort = i; dir.dataset.sortDir = i;
+      if (i > 0) k.appendChild(new Option('（不用）', ''));
+      SORT_KEYS.forEach(([key, n]) => { if (!expSort.some((x, j) => j !== i && x[0] === key)) k.appendChild(new Option(n, key)); });
+      [['asc', '正序 ↑（小→大、舊→新）'], ['desc', '倒序 ↓（大→小、新→舊）']].forEach(([v, n]) => dir.appendChild(new Option(n, v)));
+      k.value = cur ? cur[0] : ''; dir.value = cur ? cur[1] : 'asc'; dir.disabled = !cur;
+      k.onchange = () => { if (!k.value) expSort = expSort.slice(0, i); else expSort[i] = [k.value, dir.value]; save(); paint(); };
+      dir.onchange = () => { if (expSort[i]) expSort[i][1] = dir.value; save(); };
+      r.append(el('span', 'sortlab', lab), k, dir); rows.appendChild(r);
+    });
+  };
+  save(); paint();
+}
+drawSortPicker();
 // Excel 列印設定：A4 橫向、寬度縮成一頁、每頁重複標題列
 // 兩種 Excel 共用的外觀：正黑體 12 號、標題列淡藍底、全部框線、文字靠上自動換行
 const XL_FONT = { name: '微軟正黑體', size: 12 }, XL_BORDER = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
@@ -186,7 +238,7 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單');
   ws.columns = fields.map(f => ({ width: f[2] }));
   ws.addRow(fields.map(f => f[1]));
-  const rows = shownRows().slice().sort((a, b) => a.id - b.id);
+  const rows = sortedRows();
   rows.forEach(d => ws.addRow(fields.map(f => f[3](d, cnt))));
   sheetStyle(ws, fields.length);
   sheetPrintSetup(ws);
@@ -208,7 +260,7 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const rows = shownRows().slice().sort((a, b) => a.id - b.id);
+  const rows = sortedRows();
   const ids = rows.map(r => r.id); let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
@@ -291,7 +343,7 @@ function printHead(root, title, n) {
 }
 $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
-  const root = $('print-root'); const rows = shownRows().slice().sort((a, b) => a.id - b.id);
+  const root = $('print-root'); const rows = sortedRows();
   printHead(root, '品質查驗報表', rows.length);
   const fields = needFields(), cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(rows.map(r => r.id)) : {};
   const t = el('table'); const th = el('thead'); const hr = el('tr');
@@ -309,7 +361,7 @@ $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const rows = shownRows().slice().sort((a, b) => a.id - b.id);
+  const rows = sortedRows();
   if (rows.length > 150) throw new Error(`含照片的 PDF 一次最多 150 筆，目前有 ${rows.length} 筆，請先縮小篩選條件（例如先選棟別或樓層）。`);
   const ids = rows.map(r => r.id); let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
