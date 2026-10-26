@@ -217,6 +217,11 @@ await page.click('#adm-tabs button[data-tab=space]');
 await page.locator('#sec-space tr[data-name="前陽台"] button[title="往前移"]').click(); await page.waitForTimeout(300);
 await page.locator('#sec-space tr[data-name="前陽台"] button[title="往前移"]').click(); await page.waitForTimeout(300);
 ok((await page.evaluate(() => window.__db.T.spaces.slice().sort((a, b) => a.sort - b.sort)[0].name)) === '前陽台', '↑↓ 排序，不用填數字');
+{ const n = await page.locator('#sec-space tbody tr[data-name] td.no input').count();
+  await page.locator('#sec-space tr[data-name="前陽台"] td.no input').fill(String(n)); await page.locator('#sec-space tr[data-name="前陽台"] td.no input').press('Enter'); await page.waitForTimeout(300);
+  const order = await page.evaluate(() => window.__db.T.spaces.filter(s => s.active !== false).sort((a, b) => a.sort - b.sort).map(s => s.name));
+  ok(order[order.length - 1] === '前陽台', '打數字直接移到最後一個：' + order.join());
+  ok((await page.locator('#sec-space tr[data-name="前陽台"] td.no input').inputValue()) === String(n), '重畫後序號跟著變'); }
 // 樓層：可寫範圍
 await page.click('#adm-tabs button[data-tab=struct]');
 ok((await page.locator('#sec-bld tr[data-name="A棟"] .fl-cell input').inputValue()) === '2F、3F、8F', '樓層顯示');

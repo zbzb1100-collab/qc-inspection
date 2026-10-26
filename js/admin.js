@@ -58,16 +58,29 @@ function listTable(box, o) {
   const offN = o.rows.filter(r => r.active === false).length, showOff = adminShowOff.has(o.key);
   const rows = o.rows.filter(r => showOff || r.active !== false);
   const wrap = el('div', 'lt-wrap'); const t = el('table', 'lt'); wrap.appendChild(t); box.appendChild(wrap);
-  const hr = el('tr'); hr.appendChild(el('th', 'nm', o.nameHead || '名稱（點一下就能改）'));
+  const hr = el('tr'); if (sortable) hr.appendChild(el('th', 'no', '順序'));
+  hr.appendChild(el('th', 'nm', o.nameHead || '名稱（點一下就能改）'));
   hr.appendChild(el('th', null, ''));
   cols.forEach(c => { const th = el('th', c.vertical ? 'vt' : null); if (c.headEl) th.appendChild(c.headEl); else th.textContent = c.head; hr.appendChild(th); });
   if (o.detail) hr.appendChild(el('th', null, ''));
   const thead = el('thead'); thead.appendChild(hr); t.appendChild(thead);
   const tb = el('tbody'); t.appendChild(tb);
-  const span = 2 + cols.length + (o.detail ? 1 : 0);
+  const span = 2 + (sortable ? 1 : 0) + cols.length + (o.detail ? 1 : 0);
   if (!rows.length) { const tr = el('tr'); const td = el('td', 'empty', '（還沒有項目，在下面新增）'); td.colSpan = span; tr.appendChild(td); tb.appendChild(tr); }
   rows.forEach((r, i) => {
     const tr = el('tr', r.active === false ? 'off' : null); tr.dataset.name = r[nf] ?? '';
+    if (sortable) {                                  // 順序：直接打數字就移到那個位置（量大時不用一直按 ↑↓）
+      const td = el('td', 'no'), ni = el('input'); ni.type = 'number'; ni.inputMode = 'numeric'; ni.min = 1; ni.max = rows.length; ni.value = i + 1;
+      ni.title = `輸入 1～${rows.length}，按 Enter 移到那個位置`; ni.dataset.order = r.id; ni.readOnly = !!o.readonly;
+      ni.onkeydown = e => { if (e.key === 'Enter') ni.blur(); }; ni.onfocus = () => ni.select();
+      ni.onchange = () => {
+        const n = Math.round(Number(ni.value));
+        if (!n || n < 1 || n > rows.length) { toast(`請輸入 1～${rows.length}`); ni.value = i + 1; return; }
+        if (n === i + 1) return;
+        adminSave(() => moveRowTo(o.table, rows, i, n - 1), () => { ni.value = i + 1; }, `「${r[nf]}」移到第 ${n} 個`);
+      };
+      td.appendChild(ni); tr.appendChild(td);
+    }
     const nm = el('td', 'nm'); const inp = el('input'); inp.type = 'text'; inp.value = r[nf] ?? ''; inp.title = o.readonly ? '' : '點一下就能改名，改完按 Enter'; inp.readOnly = !!o.readonly;
     inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
     inp.onchange = () => adminSave(async () => { const v = inp.value.trim(); if (!v) throw new Error('名稱不能空白'); await q(sb.from(o.table).update({ [nf]: v }).eq('id', r.id)); },
@@ -133,6 +146,10 @@ function listTable(box, o) {
   ab.onclick = doAdd; ai.onkeydown = e => { if (e.key === 'Enter') doAdd(); };
   ad.appendChild(ab); box.appendChild(ad);
   if (o.hint) box.appendChild(el('p', 'hint', o.hint));
+}
+async function moveRowTo(table, rows, i, j) {     // 把第 i 個拿出來插到第 j 個，整串重新編號
+  const a = rows.slice(); const [x] = a.splice(i, 1); a.splice(j, 0, x);
+  await Promise.all(a.map((r, k) => r.sort === k + 1 ? null : q(sb.from(table).update({ sort: k + 1 }).eq('id', r.id))));
 }
 async function moveRow(table, rows, i, d) {        // 跟上一個／下一個對調，整串重新編號，不用自己填排序數字
   const j = i + d; if (j < 0 || j >= rows.length) return;

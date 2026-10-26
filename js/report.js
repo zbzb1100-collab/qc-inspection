@@ -154,7 +154,7 @@ function drawFieldPicker() {
 }
 drawFieldPicker();
 function needFields() { const f = chosenFields(); if (!f.length) throw new Error('請在「匯出欄位」至少勾一個欄位'); return f; }
-// ---------- 匯出排序：第一、第二、第三排序，每台裝置記住；四種匯出都照這個 ----------
+// ---------- 匯出排序：第一、第二…排序（不限層數），每台裝置記住；四種匯出都照這個 ----------
 const listIdx = t => { const m = new Map(); (S.all && S.all[t] ? S.all[t] : S.m[t]).slice().sort(bySort).forEach((r, i) => m.set(r.id, i)); return m; };
 // 樓層：B2 < B1 < 1F < 2F … < 19F < R1F < PRF（照數字大小，不是照字面）
 const floorKey = f => { f = String(f || '').toUpperCase(); let m;
@@ -187,11 +187,11 @@ function drawSortPicker() {
   const box = $('f-sort'); if (!box) return; box.innerHTML = '';
   const sum = el('summary', null, ''); box.appendChild(sum);
   const save = () => { try { localStorage.setItem(SORT_KEY_STORE, JSON.stringify(expSort)); } catch (e) {} sum.textContent = `匯出排序：${sortText()}（點此更改）`; };
-  const rows = el('div', 'sortrows'); box.append(rows, el('p', 'hint', '先照第一排序排，一樣的再照第二、第三排序。四種匯出都照這個順序。'));
+  const rows = el('div', 'sortrows'); box.append(rows, el('p', 'hint', '先照第一排序排，一樣的再照下一層排；選了一層就會多出下一層，可以一直加。四種匯出都照這個順序。'));
   const paint = () => {
     rows.innerHTML = '';
-    ['第一排序', '第二排序', '第三排序'].forEach((lab, i) => {
-      if (i > expSort.length) return;                         // 前一層沒選，後面先不出現
+    const CN = '一二三四五六七八九十';
+    Array.from({ length: Math.min(expSort.length + 1, SORT_KEYS.length) }, (_, i) => `第${CN[i] || i + 1}排序`).forEach((lab, i) => {   // 選了一層就多出下一層，沒有上限
       const cur = expSort[i], r = el('div', 'sortrow'), k = el('select'), dir = el('select');
       k.dataset.sort = i; dir.dataset.sortDir = i;
       if (i > 0) k.appendChild(new Option('（不用）', ''));

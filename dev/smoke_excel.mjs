@@ -175,6 +175,9 @@ ok((await page.textContent('#f-sort summary')).includes('編號↑'), '預設照
 await page.selectOption('#f-sort select[data-sort-dir="0"]', 'desc');
 await page.selectOption('#f-sort select[data-sort="1"]', 'floor');
 ok(await page.locator('#f-sort select[data-sort="2"]').count() === 1, '選了第二排序才出現第三排序');
+await page.selectOption('#f-sort select[data-sort="2"]', 'cat'); await page.selectOption('#f-sort select[data-sort="3"]', 'status');
+ok(await page.locator('#f-sort select[data-sort="4"]').count() === 1, '可以超過三層');
+await page.selectOption('#f-sort select[data-sort="2"]', '');
 { const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export')]); await dl.saveAs('/tmp/claude-0/xl/sort.xlsx');
   const rs = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/sort.xlsx').Sheets['缺失清單'], { header: 1 }).slice(1).map(r => r[0]);
   ok(rs.length > 1 && rs.every((v, i) => !i || rs[i - 1] > v), '編號倒序匯出：' + rs.join()); }
