@@ -162,7 +162,7 @@ summary{font-size:18px}
   #print-root .pmeta{font-size:10pt;color:#333;margin-bottom:8pt}
   #print-root table{width:100%;border-collapse:collapse;font-size:9.5pt}
   #print-root th,#print-root td{border:1px solid #999;padding:3pt 5pt;vertical-align:top;text-align:left;color:#000}
-  #print-root th{background:#e8e8e8}
+  #print-root th{background:#e8e8e8;white-space:nowrap}
   #print-root thead{display:table-header-group}
   #print-root tr{break-inside:avoid}
   #print-root .card{border:1px solid #888;border-radius:4pt;padding:6pt 8pt;margin:0 0 8pt;break-inside:avoid;font-size:10pt}

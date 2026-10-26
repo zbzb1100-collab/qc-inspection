@@ -117,18 +117,18 @@ async function photoCounts(ids) {
 // ---------- 匯出欄位：自己勾要哪些欄，每台裝置記住；Excel、PDF 都照這個 ----------
 const pos = d => `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`;
 const EXPORT_FIELDS = [   // [key, 欄名, Excel 欄寬, 取值]
-  ['id', '編號', 6, d => d.id], ['site', '案場', 10, d => M.name('sites', d.site_id)], ['itype', '檢查類型', 10, d => M.name('inspect_types', d.inspect_type_id)],
+  ['id', '編號', 6, d => d.id], ['cat_at', '建立日期', 12, d => fmtTime(d.created_at).slice(0, 10)], ['site', '案場', 10, d => M.name('sites', d.site_id)], ['itype', '檢查類型', 10, d => M.name('inspect_types', d.inspect_type_id)],
   ['pos', '位置（棟 樓 戶）', 14, pos], ['bld', '棟別', 8, d => M.name('buildings', d.building_id)], ['floor', '樓層', 6, d => d.floor], ['unit', '戶別', 12, d => M.unitCode(d.unit_id)],
   ['cust', '客戶名稱', 12, d => d.customer_name || ''], ['space', '空間', 10, d => M.name('spaces', d.space_id)], ['cat', '工項', 14, d => M.name('categories', d.category_id)],
   ['item', '缺失內容', 28, d => M.name('items', d.item_id)], ['method', '修繕方式', 8, d => M.name('repair_methods', d.repair_method_id)],
   ['fixv', '修繕廠商', 20, d => M.name('vendors', d.fix_vendor_id)], ['respv', '責任廠商', 20, d => M.name('vendors', d.resp_vendor_id)],
-  ['planned', '預計修繕日', 12, d => d.planned_date || ''], ['fixed', '實際修繕日', 12, d => d.fixed_date || ''], ['status', '狀態', 10, d => statusText(d)],
+  ['planned', '預計修繕日', 13, d => d.planned_date || ''], ['fixed', '實際修繕日', 13, d => d.fixed_date || ''], ['status', '狀態', 10, d => statusText(d)],
   ['ctype', '結案方式', 10, d => d.close_type || ''], ['reason', '不修原因', 20, d => d.close_reason || ''], ['signer', '簽認人', 10, d => d.signed_name || ''],
-  ['sdate', '簽認日期', 12, d => d.signed_date || ''], ['desc', '缺失說明', 30, d => d.description || ''],
-  ['cby', '建立者', 10, d => M.userName(d.created_by)], ['cat_at', '建立時間', 16, d => fmtTime(d.created_at)],
+  ['sdate', '簽認日期', 13, d => d.signed_date || ''], ['desc', '缺失說明', 30, d => d.description || ''],
+  ['cby', '建立者', 10, d => M.userName(d.created_by)],
   ['uby', '最後修改者', 10, d => M.userName(d.updated_by)], ['uat', '最後修改時間', 16, d => fmtTime(d.updated_at)],
   ['nb', '修繕前照片數', 8, (d, c) => (c[d.id] || {}).before || 0], ['na', '修繕後照片數', 8, (d, c) => (c[d.id] || {}).after || 0]];
-const FIELDS_COMMON = ['id', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'planned', 'status', 'desc', 'cat_at'];
+const FIELDS_COMMON = ['id', 'cat_at', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'planned', 'status', 'desc'];
 const FIELDS_KEY = 'qc-export-fields';
 let expFields = (() => { try { const v = JSON.parse(localStorage.getItem(FIELDS_KEY)); if (Array.isArray(v) && v.length) return v.filter(k => EXPORT_FIELDS.some(f => f[0] === k)); } catch (e) {} return FIELDS_COMMON.slice(); })();
 const chosenFields = () => EXPORT_FIELDS.filter(f => expFields.includes(f[0]));
@@ -213,15 +213,21 @@ function sheetStyle(ws, nCols, valign) {
   ws.eachRow((r, i) => {
     for (let c = 1; c <= nCols; c++) {
       const cell = r.getCell(c); cell.border = XL_BORDER;
-      if (i === 1) { cell.font = { ...XL_FONT, bold: true }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; }
+      if (i === 1) { cell.font = { ...XL_FONT, bold: true }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDDEBF7' } }; cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false }; }
       else { cell.font = XL_FONT; cell.alignment = { vertical: valign || 'top', wrapText: true }; }
     }
   });
   ws.getRow(1).height = 24;
 }
+// 欄寬：至少放得下一行標題（標題不換行），內容短的就縮到剛好，長的到上限再換行
+const textW = v => [...String(v ?? '')].reduce((n, ch) => n + (ch.charCodeAt(0) > 255 ? 2.2 : 1.15), 0) + 1.5;
+function colWidths(fields, data, cap) {
+  return fields.map((f, i) => { const hw = textW(f[1]), max = Math.max(hw, cap ? Math.min(f[2], cap) : f[2]);
+    return Math.min(max, Math.max(hw, ...data.map(r => textW(r[i])))); });
+}
 function sheetPrintSetup(ws) {
   ws.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:1',
-    margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
+    margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.5, header: 0.2, footer: 0.25 }, horizontalCentered: true };
   ws.headerFooter = { oddFooter: '第 &P 頁，共 &N 頁' };
   ws.views = [{ state: 'frozen', ySplit: 1 }];
 }
@@ -236,10 +242,10 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
   const cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(shownRows().map(r => r.id)) : {};
   if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單');
-  ws.columns = fields.map(f => ({ width: f[2] }));
+  const rows = sortedRows(), data = rows.map(d => fields.map(f => f[3](d, cnt)));
+  ws.columns = colWidths(fields, data).map(width => ({ width }));
   ws.addRow(fields.map(f => f[1]));
-  const rows = sortedRows();
-  rows.forEach(d => ws.addRow(fields.map(f => f[3](d, cnt))));
+  data.forEach(v => ws.addRow(v));
   sheetStyle(ws, fields.length);
   sheetPrintSetup(ws);
   downloadXlsx(await wb.xlsx.writeBuffer(), '品質查驗報表');
@@ -295,8 +301,9 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   // 照片欄寬剛好放一張照片＋左右留白；照片放在格子正中間，不壓到框線
   // 文字欄收窄（列夠高，長字會換行），整張才不會因為縮成一頁寬而字太小
   const IMG_W = 160, IMG_H = 120, PCOL = 24;               // 欄寬 24 字 ≈ 173px
-  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? Math.min(fields[i][2], 16) : PCOL }));
-  rows.forEach(d => ws.addRow(fields.map(f => f[3](d, cnt))));
+  const data = rows.map(d => fields.map(f => f[3](d, cnt))), tw = colWidths(fields, data, 16);
+  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? tw[i] : PCOL }));
+  data.forEach(v => ws.addRow(v));
   sheetStyle(ws, head.length, 'middle');
   rows.forEach((d, r) => {
     const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
