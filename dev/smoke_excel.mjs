@@ -156,6 +156,8 @@ await page.uncheck('#f-ph-after');
 const [dp2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export-photo')]);
 await dp2.saveAs('/tmp/claude-0/xl/photo2.xlsx');
 const hd2 = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/photo2.xlsx').Sheets['缺失清單（含照片）'], { header: 1 })[0];
+{ const dx = (await import('child_process')).execSync('unzip -p /tmp/claude-0/xl/photo.xlsx xl/drawings/drawing1.xml').toString();
+  ok(dx.includes('editAs="twoCell"') && !dx.includes('oneCellAnchor'), '照片設成隨儲存格移動和縮放（篩選時跟著那一列）'); }
 ok(hd2.includes('修繕前照片1') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
 
 // ---- 匯出欄位自選 ----

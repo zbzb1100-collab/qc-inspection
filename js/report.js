@@ -300,18 +300,21 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   ws.addRow(head);
   // 照片欄寬剛好放一張照片＋左右留白；照片放在格子正中間，不壓到框線
   // 文字欄收窄（列夠高，長字會換行），整張才不會因為縮成一頁寬而字太小
-  const IMG_W = 160, IMG_H = 120, PCOL = 24;               // 欄寬 24 字 ≈ 173px
+  const IMG_W = 160, IMG_H = 120, PAD = 6, PCOL = 24;      // 欄寬 24 字 ≈ 173px，照片 160px＋左右留白
   const data = rows.map(d => fields.map(f => f[3](d, cnt))), tw = colWidths(fields, data, 16);
   ws.columns = head.map((h, i) => ({ width: i < textHead.length ? tw[i] : PCOL }));
   data.forEach(v => ws.addRow(v));
   sheetStyle(ws, head.length, 'middle');
   rows.forEach((d, r) => {
     const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
-    if (has) ws.getRow(r + 2).height = IMG_H * 0.75 + 12;
+    if (has) ws.getRow(r + 2).height = (IMG_H + 2 * PAD) * 0.75;
     photoCols.forEach((c, ci) => {
       const p = (by[d.id + c.kind] || [])[c.j]; const buf = p && imgs.get(p.id); if (!buf) return;
       const id = wb.addImage({ buffer: buf, extension: 'jpeg' });
-      ws.addImage(id, { tl: { col: textHead.length + ci + 0.04, row: r + 1 + 0.04 }, ext: { width: IMG_W, height: IMG_H }, editAs: 'oneCell' });
+      // 照片的左上、右下都釘在同一格裡（twoCellAnchor＝隨儲存格移動和調整大小）：Excel 篩選、排序、隱藏列時照片跟著那一列走
+      const col = textHead.length + ci, row = r + 1, px = 9525;   // 1 像素 = 9525 EMU
+      ws.addImage(id, { tl: { nativeCol: col, nativeColOff: PAD * px, nativeRow: row, nativeRowOff: PAD * px },
+        br: { nativeCol: col, nativeColOff: (PAD + IMG_W) * px, nativeRow: row, nativeRowOff: (PAD + IMG_H) * px }, editAs: 'twoCell' });
     });
   });
   sheetPrintSetup(ws);
