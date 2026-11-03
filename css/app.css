@@ -492,3 +492,40 @@ table.lt{border-collapse:separate;border-spacing:0;width:100%;font-size:16px}
 .fieldgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px 12px;margin-top:8px}
 .fieldgrid label{display:flex;align-items:center;gap:6px;font-size:15px;min-height:32px}
 .btn.small{padding:6px 12px;font-size:14px}
+
+/* ===== 外觀：聖誕節（深松綠底、金色按鈕、紅色點綴、飄雪、燈串） ===== */
+:root[data-skin="xmas"]{color-scheme:dark;
+  --bg:#0c2219; --surface:#123126; --surface2:#183d30; --line:#2a5543;
+  --ink:#fbf4e4; --muted:#b9c9b8; --accent:#f2c14e; --accent-ink:#2a1a02;
+  --todo:#ff6b5e; --fixed:#fbbf24; --sign:#c4a7ff; --closed:#7ee0a1; --pin:#ff4d4d;
+  --xred:#d7263d; --btn:var(--accent); --btn-ink:var(--accent-ink); --r:14px;
+  --shadow:0 2px 10px rgba(0,0,0,.25)}
+:root[data-skin="xmas"] body{background:radial-gradient(1200px 600px at 50% -200px,#1b4a37 0%,transparent 70%),var(--bg)}
+:root[data-skin="xmas"] .topbar{background:linear-gradient(180deg,#8f1424,#6d0f1c);border-bottom:0;color:#fff7e6}
+:root[data-skin="xmas"] .topbar .crumb{color:#ffd9b0}
+:root[data-skin="xmas"] .topbar .iconbtn{border-color:rgba(255,236,200,.45);color:#fff7e6}
+/* 燈串：掛在上方紅條下面，一閃一閃 */
+:root[data-skin="xmas"] .topbar::after{content:"";position:absolute;left:0;right:0;bottom:-9px;height:12px;pointer-events:none;
+  background:radial-gradient(circle,#ffd447 0 3.5px,transparent 4.5px) 0 4px/56px 12px repeat-x,
+             radial-gradient(circle,#ff4d5e 0 3.5px,transparent 4.5px) 14px 4px/56px 12px repeat-x,
+             radial-gradient(circle,#59e38a 0 3.5px,transparent 4.5px) 28px 4px/56px 12px repeat-x,
+             radial-gradient(circle,#6ec8ff 0 3.5px,transparent 4.5px) 42px 4px/56px 12px repeat-x;
+  animation:xmas-twinkle 1.6s steps(2) infinite}
+:root[data-skin="xmas"] .topbar::before{content:"";position:absolute;left:0;right:0;bottom:-4px;height:6px;pointer-events:none;
+  background:radial-gradient(ellipse 28px 6px at 14px 0,transparent 4px,#2f5a3e 4.5px,#2f5a3e 5.5px,transparent 6px) 0 0/28px 6px repeat-x}
+@keyframes xmas-twinkle{50%{filter:brightness(.55) saturate(.7)}}
+:root[data-skin="xmas"] #title::before{content:"🎄 "}
+:root[data-skin="xmas"] .card{border-color:var(--line);box-shadow:var(--shadow)}
+:root[data-skin="xmas"] .btn{background:linear-gradient(180deg,#f7d06a,#e0a92c);color:var(--accent-ink);box-shadow:0 2px 0 #9c6f12}
+:root[data-skin="xmas"] .btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(242,193,78,.6);box-shadow:none}
+:root[data-skin="xmas"] .chip.on,:root[data-skin="xmas"] .chip[aria-pressed="true"]{background:var(--xred);border-color:var(--xred);color:#fff}
+:root[data-skin="xmas"] .tabs{background:#0f2a20;border-top:2px solid var(--xred)}
+:root[data-skin="xmas"] .tabs button.on{color:var(--accent)}
+:root[data-skin="xmas"] .tabs button.on svg{filter:drop-shadow(0 0 6px rgba(242,193,78,.6))}
+:root[data-skin="xmas"] .login{background:radial-gradient(900px 500px at 50% 0,#1d5a40,transparent 70%),var(--bg)}
+:root[data-skin="xmas"] .login h1::after{content:" 🎅"}
+/* 飄雪：不擋點擊，系統設定「減少動態效果」時不下雪 */
+.xmas-snow{position:fixed;inset:0;pointer-events:none;z-index:4;overflow:hidden}
+.xmas-snow i{position:absolute;top:-12px;color:#fff;opacity:.8;font-style:normal;animation:xmas-fall linear infinite;will-change:transform}
+@keyframes xmas-fall{to{transform:translate3d(var(--dx,20px),105vh,0) rotate(200deg)}}
+@media (prefers-reduced-motion:reduce){.xmas-snow{display:none}:root[data-skin="xmas"] .topbar::after{animation:none}}

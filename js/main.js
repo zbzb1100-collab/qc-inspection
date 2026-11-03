@@ -83,11 +83,25 @@ async function enter(user) {
 })();
 
 // 外觀：每台裝置各自記住
-const SKINS = [['pro', '專業藍', '#2f5b8f'], ['soft', '清爽圓角', '#3478d4'], ['m3', 'Material', '#0f7c99'], ['tech', '科技感（深色）', '#22d3ee']];
+const SKINS = [['pro', '專業藍', '#2f5b8f'], ['soft', '清爽圓角', '#3478d4'], ['m3', 'Material', '#0f7c99'], ['tech', '科技感（深色）', '#22d3ee'], ['xmas', '聖誕節 🎄', '#d7263d']];
 function setSkin(k) {
   document.documentElement.dataset.skin = k;
   try { localStorage.setItem('qc-skin', k); } catch (e) {}
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = k === 'tech' ? '#0d1626' : '#ffffff';
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = k === 'tech' ? '#0d1626' : k === 'xmas' ? '#8f1424' : '#ffffff';
+  snow(k === 'xmas');
+}
+function snow(on) {                                     // 聖誕節外觀才下雪；雪花數量少，手機也不吃力
+  let s = document.querySelector('.xmas-snow');
+  if (!on) { if (s) s.remove(); return; }
+  if (s) return;
+  s = el('div', 'xmas-snow'); s.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 28; i++) {
+    const f = el('i', null, i % 3 ? '•' : '❄'), z = 8 + Math.random() * 14;
+    f.style.left = Math.random() * 100 + 'vw'; f.style.fontSize = z + 'px'; f.style.opacity = (0.35 + Math.random() * 0.5).toFixed(2);
+    f.style.animationDuration = (9 + Math.random() * 12).toFixed(1) + 's'; f.style.animationDelay = (-Math.random() * 20).toFixed(1) + 's';
+    f.style.setProperty('--dx', Math.round(Math.random() * 80 - 40) + 'px'); s.appendChild(f);
+  }
+  document.body.appendChild(s);
 }
 $('skinbtn').onclick = e => {
   e.stopPropagation(); const p = $('skinpick');
