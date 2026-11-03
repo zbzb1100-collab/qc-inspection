@@ -261,65 +261,83 @@ function loadScriptOnce(src) {
     t.onerror = () => rej(new Error('匯出元件載入失敗，請確認網路後再試')); document.head.appendChild(t);
   });
 }
-const PHOTO_MAX_ROWS = 600, PHOTO_PER_KIND = 3;
-$('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
-  if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
-  const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
-  if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const rows = sortedRows();
-  const ids = rows.map(r => r.id); let photos = [];
+// 含照片的匯出不限筆數：系統自己切成幾個檔（每檔 CHUNK.xl／CHUNK.pdf 筆缺失），一檔做完、下載、放掉記憶體再做下一檔
+const PHOTO_PER_KIND = 3, CHUNK = { xl: 150, pdf: 100 };
+async function photosOf(ids, kinds, perKind) {          // 每筆缺失、每種照片最多 perKind 張
+  let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
     if (error) throw error; photos = photos.concat(data.filter(p => !p.deleted_at));
   }
-  const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; (by[k] = by[k] || []).length < PHOTO_PER_KIND && by[k].push(p); });
-  const use = Object.values(by).flat();
-  if (use.length > PHOTO_MAX_ROWS) throw new Error(`符合的照片有 ${use.length} 張，一次最多匯出 ${PHOTO_MAX_ROWS} 張，請先縮小篩選條件（例如先選棟別或樓層）。`);
-  if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
-  const urls = await signedUrls('photos', use.map(p => p.path));
-  const imgs = new Map(); let done = 0, next = 0;
+  const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; const a = (by[k] = by[k] || []); if (a.length < perKind) a.push(p); });
+  return by;
+}
+async function loadPhotoBlobs(list, maxSide, quality, label) {   // 下載並縮小：回傳 Map(photo.id → Blob)
+  const urls = await signedUrls('photos', list.map(p => p.path));
+  const out = new Map(); let done = 0, next = 0;
   const worker = async () => {
-    while (next < use.length) {
-      const i = next++; const p = use[i];
-      try {
-        const blob = await (await fetch(urls[i])).blob();
-        const small = await compressImage(blob, 640, 0.7);            // Excel 內縮小，檔案才不會太大
-        imgs.set(p.id, await small.arrayBuffer());
-      } catch (err) { console.warn('照片載入失敗', p.path, err); }
-      done++; if (done % 10 === 0 || done === use.length) toast(`整理照片 ${done} / ${use.length}…`);
+    while (next < list.length) {
+      const i = next++, p = list[i];
+      try { out.set(p.id, await compressImage(await (await fetch(urls[i])).blob(), maxSide, quality)); }
+      catch (err) { console.warn('照片載入失敗', p.path, err); }
+      done++; if (done % 10 === 0 || done === list.length) toast(`${label}整理照片 ${done} / ${list.length}…`);
     }
   };
   await Promise.all([worker(), worker(), worker(), worker(), worker()]);
-
-  const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單（含照片）');
-  const fields = needFields(), cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(ids) : {};
-  const textHead = fields.map(f => f[1]);
-  const kindName = { before: '修繕前', after: '修繕後' };
-  const photoCols = []; kinds.forEach(k => { const n = Math.max(1, ...rows.map(r => (by[r.id + k] || []).length)); for (let j = 0; j < n; j++) photoCols.push({ kind: k, j }); });
-  const head = textHead.concat(photoCols.map(c => `${kindName[c.kind]}照片${c.j + 1}`));
-  ws.addRow(head);
-  // 照片欄寬剛好放一張照片＋左右留白；照片放在格子正中間，不壓到框線
-  // 文字欄收窄（列夠高，長字會換行），整張才不會因為縮成一頁寬而字太小
-  const IMG_W = 160, IMG_H = 120, PAD = 6, PCOL = 24;      // 欄寬 24 字 ≈ 173px，照片 160px＋左右留白
-  const data = rows.map(d => fields.map(f => f[3](d, cnt))), tw = colWidths(fields, data, 16);
-  ws.columns = head.map((h, i) => ({ width: i < textHead.length ? tw[i] : PCOL }));
-  data.forEach(v => ws.addRow(v));
-  sheetStyle(ws, head.length, 'middle');
-  rows.forEach((d, r) => {
-    const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
-    if (has) ws.getRow(r + 2).height = (IMG_H + 2 * PAD) * 0.75;
-    photoCols.forEach((c, ci) => {
-      const p = (by[d.id + c.kind] || [])[c.j]; const buf = p && imgs.get(p.id); if (!buf) return;
-      const id = wb.addImage({ buffer: buf, extension: 'jpeg' });
-      // 照片的左上、右下都釘在同一格裡（twoCellAnchor＝隨儲存格移動和調整大小）：Excel 篩選、排序、隱藏列時照片跟著那一列走
-      const col = textHead.length + ci, row = r + 1, px = 9525;   // 1 像素 = 9525 EMU
-      ws.addImage(id, { tl: { nativeCol: col, nativeColOff: PAD * px, nativeRow: row, nativeRowOff: PAD * px },
-        br: { nativeCol: col, nativeColOff: (PAD + IMG_W) * px, nativeRow: row, nativeRowOff: (PAD + IMG_H) * px }, editAs: 'twoCell' });
-    });
-  });
-  sheetPrintSetup(ws);
-  downloadXlsx(await wb.xlsx.writeBuffer(), '品質查驗報表_含照片');
-  toast(`已匯出 ${rows.length} 筆、${imgs.size} 張照片`);
+  return out;
+}
+const chunksOf = (a, n) => { const r = []; for (let i = 0; i < a.length; i += n) r.push(a.slice(i, i + n)); return r; };
+const partName = (k, n) => n > 1 ? `_第${k}檔共${n}檔` : '';
+const pause = ms => new Promise(r => setTimeout(r, ms));
+function downloadBlob(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+const today8 = () => { const d0 = new Date(); return `${d0.getFullYear()}${pad(d0.getMonth() + 1)}${pad(d0.getDate())}`; };
+$('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
+  if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
+  const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
+  if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
+  const fields = needFields(), all = sortedRows(), parts = chunksOf(all, CHUNK.xl);
+  if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
+  const cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(all.map(r => r.id)) : {};
+  let nImg = 0;
+  for (let k = 0; k < parts.length; k++) {
+    const rows = parts[k], label = parts.length > 1 ? `第 ${k + 1}／${parts.length} 檔：` : '';
+    const by = await photosOf(rows.map(r => r.id), kinds, PHOTO_PER_KIND);
+    const blobs = await loadPhotoBlobs(Object.values(by).flat(), 640, 0.7, label);   // Excel 內縮小，檔案才不會太大
+    const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單（含照片）');
+    const textHead = fields.map(f => f[1]);
+    const kindName = { before: '修繕前', after: '修繕後' };
+    const photoCols = []; kinds.forEach(kd => { const n = Math.max(1, ...rows.map(r => (by[r.id + kd] || []).length)); for (let j = 0; j < n; j++) photoCols.push({ kind: kd, j }); });
+    const head = textHead.concat(photoCols.map(c => `${kindName[c.kind]}照片${c.j + 1}`));
+    ws.addRow(head);
+    // 照片欄寬剛好放一張照片＋左右留白；文字欄收窄（列夠高，長字會換行），整張才不會因為縮成一頁寬而字太小
+    const IMG_W = 160, IMG_H = 120, PAD = 6, PCOL = 24;      // 欄寬 24 字 ≈ 173px，照片 160px＋左右留白
+    const data = rows.map(d => fields.map(f => f[3](d, cnt))), tw = colWidths(fields, data, 16);
+    ws.columns = head.map((h, i) => ({ width: i < textHead.length ? tw[i] : PCOL }));
+    data.forEach(v => ws.addRow(v));
+    sheetStyle(ws, head.length, 'middle');
+    for (let r = 0; r < rows.length; r++) {
+      const d = rows[r];
+      const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
+      if (has) ws.getRow(r + 2).height = (IMG_H + 2 * PAD) * 0.75;
+      for (let ci = 0; ci < photoCols.length; ci++) {
+        const c = photoCols[ci], p = (by[d.id + c.kind] || [])[c.j], b = p && blobs.get(p.id); if (!b) continue;
+        const id = wb.addImage({ buffer: await b.arrayBuffer(), extension: 'jpeg' }); nImg++;
+        // 照片的左上、右下都釘在同一格裡（twoCellAnchor＝隨儲存格移動和調整大小）：Excel 篩選、排序、隱藏列時照片跟著那一列走
+        const col = textHead.length + ci, row = r + 1, px = 9525;   // 1 像素 = 9525 EMU
+        ws.addImage(id, { tl: { nativeCol: col, nativeColOff: PAD * px, nativeRow: row, nativeRowOff: PAD * px },
+          br: { nativeCol: col, nativeColOff: (PAD + IMG_W) * px, nativeRow: row, nativeRowOff: (PAD + IMG_H) * px }, editAs: 'twoCell' });
+      }
+    }
+    sheetPrintSetup(ws);
+    toast(`${label}產生 Excel…`);
+    downloadBlob(new Blob([await wb.xlsx.writeBuffer()], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      `品質查驗報表_含照片_${today8()}${partName(k + 1, parts.length)}.xlsx`);
+    if (k < parts.length - 1) await pause(1200);          // 連續下載中間停一下，瀏覽器才不會擋
+  }
+  toast(parts.length > 1 ? `已匯出 ${all.length} 筆、${nImg} 張照片，分成 ${parts.length} 個檔（每檔 ${CHUNK.xl} 筆）` : `已匯出 ${all.length} 筆、${nImg} 張照片`);
 });
 
 // ---------- 匯出 PDF（用瀏覽器列印，目的地選「另存為 PDF」）----------
@@ -367,38 +385,93 @@ $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
   t.appendChild(tb); root.appendChild(t);
   printNow(true);
 });
+// 含照片的 PDF：不經過列印視窗，直接在手機／電腦上一頁一頁畫成圖再組成 PDF 檔（A4 直式）
+// 每次只有一頁在記憶體裡，筆數再多也不會當掉；每 CHUNK.pdf 筆存成一個檔
+const PG = { W: 1240, H: 1754, M: 70 };                    // A4 @150dpi，邊界約 12mm
+const PFONT = '"Noto Sans TC","Microsoft JhengHei","PingFang TC","Heiti TC",sans-serif';
+function wrapText(g, text, maxW) {                         // 中文逐字換行，英數不拆字
+  const out = []; String(text).split('\n').forEach(par => {
+    let line = ''; const toks = par.match(/[A-Za-z0-9.\-_/:]+|./gu) || [''];
+    toks.forEach(t => { if (line && g.measureText(line + t).width > maxW) { out.push(line); line = t.trimStart(); } else line += t; });
+    out.push(line);
+  });
+  return out;
+}
+function cardLines(d) {
+  return [
+    ['b', `#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${statusText(d)}${d.close_type && !isNofix(d) ? '・' + d.close_type : ''}］`],
+    ['n', `${M.name('categories', d.category_id)}　${M.name('items', d.item_id)}`],
+    ['s', `修繕廠商：${M.name('vendors', d.fix_vendor_id) || '—'}　責任廠商：${M.name('vendors', d.resp_vendor_id) || '—'}　預計：${d.planned_date || '—'}　實際：${d.fixed_date || '—'}`],
+    ...(d.description ? [['s', '說明：' + d.description]] : []), ...(d.close_reason ? [['s', '不修原因：' + d.close_reason]] : [])];
+}
+const FONT = { b: `700 26px ${PFONT}`, n: `500 23px ${PFONT}`, s: `400 21px ${PFONT}`, cap: `400 18px ${PFONT}` }, LH = { b: 36, n: 33, s: 30 };
+const PCOLS = 3, PGAP = 14, CAP_H = 26, CPAD = 16;
+function layoutCard(g, d, kinds, by) {                      // 算出這張卡片要多高
+  const iw = PG.W - 2 * PG.M - 2 * CPAD, lines = [];
+  cardLines(d).forEach(([t, txt]) => { g.font = FONT[t]; wrapText(g, txt, iw).forEach(l => lines.push([t, l])); });
+  const cw = (iw - (PCOLS - 1) * PGAP) / PCOLS, ch = Math.round(cw * 0.75);
+  const groups = kinds.map(k => ({ k, ps: by[d.id + k] || [] })).filter(x => x.ps.length);
+  const prow = groups.reduce((n, x) => n + Math.ceil(x.ps.length / PCOLS), 0);
+  const h = CPAD * 2 + lines.reduce((n, [t]) => n + LH[t], 0) + (prow ? 8 + prow * (ch + CAP_H + PGAP) : 0);
+  return { lines, groups, cw, ch, h };
+}
+async function drawCard(g, y, L, blobs) {
+  const x0 = PG.M, w = PG.W - 2 * PG.M;
+  g.strokeStyle = '#888'; g.lineWidth = 2; g.strokeRect(x0, y, w, L.h);
+  let cy = y + CPAD;
+  L.lines.forEach(([t, l]) => { g.font = FONT[t]; g.fillStyle = t === 's' ? '#333' : '#000'; g.fillText(l, x0 + CPAD, cy + LH[t] - 9); cy += LH[t]; });
+  if (L.groups.length) cy += 8;
+  for (const { k, ps } of L.groups) {
+    for (let j = 0; j < ps.length; j++) {
+      const col = j % PCOLS, px = x0 + CPAD + col * (L.cw + PGAP);
+      if (j && !col) cy += L.ch + CAP_H + PGAP;
+      g.strokeStyle = '#bbb'; g.lineWidth = 1; g.strokeRect(px, cy, L.cw, L.ch);
+      const b = blobs.get(ps[j].id);
+      if (b) {
+        try {
+          const bm = await createImageBitmap(b), s = Math.min(L.cw / bm.width, L.ch / bm.height), dw = bm.width * s, dh = bm.height * s;
+          g.drawImage(bm, px + (L.cw - dw) / 2, cy + (L.ch - dh) / 2, dw, dh); bm.close && bm.close();
+        } catch (err) { console.warn('照片畫不出來', err); }
+      }
+      g.font = FONT.cap; g.fillStyle = '#444'; g.fillText(`${k === 'before' ? '修繕前' : '修繕後'} ${j + 1}`, px, cy + L.ch + 20);
+    }
+    cy += L.ch + CAP_H + PGAP;
+  }
+}
 $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const rows = sortedRows();
-  if (rows.length > 150) throw new Error(`含照片的 PDF 一次最多 150 筆，目前有 ${rows.length} 筆，請先縮小篩選條件（例如先選棟別或樓層）。`);
-  const ids = rows.map(r => r.id); let photos = [];
-  for (let i = 0; i < ids.length; i += 200) {
-    const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
-    if (error) throw error; photos = photos.concat(data.filter(p => !p.deleted_at));
+  if (!window.jspdf) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  const all = sortedRows(), parts = chunksOf(all, CHUNK.pdf), made = fmtTime(new Date().toISOString()), filt = filterSummary();
+  const cv = document.createElement('canvas'); cv.width = PG.W; cv.height = PG.H; const g = cv.getContext('2d'); g.textBaseline = 'alphabetic';
+  for (let k = 0; k < parts.length; k++) {
+    const rows = parts[k], label = parts.length > 1 ? `第 ${k + 1}／${parts.length} 檔：` : '';
+    const by = await photosOf(rows.map(r => r.id), kinds, 4);
+    const blobs = await loadPhotoBlobs(Object.values(by).flat(), 900, 0.8, label);
+    const doc = new jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+    let page = 0, y = 0;
+    const flush = () => {
+      g.font = FONT.cap; g.fillStyle = '#666'; g.textAlign = 'center'; g.fillText(`第 ${page} 頁`, PG.W / 2, PG.H - 30); g.textAlign = 'left';
+      if (page > 1) doc.addPage(); doc.addImage(cv.toDataURL('image/jpeg', 0.8), 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    };
+    const newPage = () => { if (page) flush(); page++; g.fillStyle = '#fff'; g.fillRect(0, 0, PG.W, PG.H); y = PG.M; };
+    newPage();
+    g.font = `700 38px ${PFONT}`; g.fillStyle = '#000'; g.fillText('品質查驗報表（含照片）', PG.M, y + 36); y += 52;
+    g.font = FONT.s; g.fillStyle = '#333';
+    wrapText(g, `${made}　共 ${all.length} 筆${parts.length > 1 ? `　本檔第 ${k * CHUNK.pdf + 1}～${k * CHUNK.pdf + rows.length} 筆（第 ${k + 1}／${parts.length} 檔）` : ''}　篩選：${filt}`, PG.W - 2 * PG.M)
+      .forEach(l => { g.fillText(l, PG.M, y + 22); y += 30; });
+    y += 14;
+    for (let i = 0; i < rows.length; i++) {
+      const L = layoutCard(g, rows[i], kinds, by);
+      if (y + L.h > PG.H - PG.M && y > PG.M) newPage();   // 放不下就換頁（卡片不拆開）
+      await drawCard(g, y, L, blobs); y += L.h + 16;
+      if (i % 10 === 9) toast(`${label}排版 ${i + 1} / ${rows.length} 筆…`);
+    }
+    flush();
+    toast(`${label}產生 PDF…`);
+    downloadBlob(doc.output('blob'), `品質查驗報表_含照片_${today8()}${partName(k + 1, parts.length)}.pdf`);
+    if (k < parts.length - 1) await pause(1200);
   }
-  const by = {}; photos.forEach(p => { const k = p.defect_id + p.kind; const a = (by[k] = by[k] || []); if (a.length < 4) a.push(p); });
-  const use = Object.values(by).flat();
-  const urls = await signedUrls('photos', use.map(p => p.path)); const url = new Map(use.map((p, i) => [p.id, urls[i]]));
-  const root = $('print-root'); printHead(root, '品質查驗報表（含照片）', rows.length);
-  const imgs = [];
-  rows.forEach(d => {
-    const c = el('div', 'card');
-    c.appendChild(el('div', 'h', `#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${statusText(d)}${d.close_type && !isNofix(d) ? '・' + d.close_type : ''}］`));
-    c.appendChild(el('div', null, `${M.name('categories', d.category_id)}　${M.name('items', d.item_id)}`));
-    c.appendChild(el('div', 's', `修繕廠商：${M.name('vendors', d.fix_vendor_id) || '—'}　責任廠商：${M.name('vendors', d.resp_vendor_id) || '—'}　預計：${d.planned_date || '—'}　實際：${d.fixed_date || '—'}`));
-    if (d.description) c.appendChild(el('div', 's', '說明：' + d.description));
-    if (d.close_reason) c.appendChild(el('div', 's', '不修原因：' + d.close_reason));
-    const ph = el('div', 'ph');
-    kinds.forEach(k => (by[d.id + k] || []).forEach((p, j) => {
-      const f = el('figure'); const im = el('img'); im.alt = ''; imgs.push(im); im.src = url.get(p.id);
-      f.append(im, el('figcaption', null, `${k === 'before' ? '修繕前' : '修繕後'} ${j + 1}`)); ph.appendChild(f);
-    }));
-    if (ph.children.length) c.appendChild(ph);
-    root.appendChild(c);
-  });
-  toast('整理照片中…');
-  await Promise.all(imgs.map(im => new Promise(res => { if (im.complete) res(); else { im.onload = im.onerror = res; setTimeout(res, 15000); } })));
-  printNow(false);
+  toast(parts.length > 1 ? `已匯出 ${all.length} 筆，分成 ${parts.length} 個 PDF（每檔 ${CHUNK.pdf} 筆）` : `已匯出 ${all.length} 筆`);
 });

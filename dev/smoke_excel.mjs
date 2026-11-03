@@ -8,6 +8,7 @@ const root = new URL('..', import.meta.url).pathname;
 const mock = fs.readFileSync(root + 'dev/mock-supabase.js', 'utf8');
 const xlsxSrc = fs.readFileSync(process.env.XLSX_DIR ? process.env.XLSX_DIR + 'node_modules/xlsx/dist/xlsx.full.min.js' : '/tmp/claude-0/xl/node_modules/xlsx/dist/xlsx.full.min.js', 'utf8');
 const exceljsSrc = fs.readFileSync('/tmp/claude-0/xl/node_modules/exceljs/dist/exceljs.min.js', 'utf8');
+const jspdfSrc = fs.readFileSync('/tmp/claude-0/xl/node_modules/jspdf/dist/jspdf.umd.min.js', 'utf8');
 const results = []; const fail = [];
 const ok = (c, m) => { results.push((c ? 'PASS ' : 'FAIL ') + m); if (!c) fail.push(m); };
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--no-sandbox'] }).catch(() => chromium.launch({ args: ['--no-sandbox'] }));
@@ -20,6 +21,7 @@ await page.route('**/*', r => {
   if (u.startsWith('file://')) return r.continue();
   if (u.includes('supabase')) return r.fulfill({ contentType: 'application/javascript', body: '' });
   if (u.includes('exceljs')) return r.fulfill({ contentType: 'application/javascript', body: exceljsSrc });
+  if (u.includes('jspdf')) return r.fulfill({ contentType: 'application/javascript', body: jspdfSrc });
   if (u.includes('xlsx')) return r.fulfill({ contentType: 'application/javascript', body: xlsxSrc });
   return r.fulfill({ contentType: 'text/css', body: '' });
 });
@@ -159,6 +161,12 @@ const hd2 = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/photo2.xlsx
 { const dx = (await import('child_process')).execSync('unzip -p /tmp/claude-0/xl/photo.xlsx xl/drawings/drawing1.xml').toString();
   ok(dx.includes('editAs="twoCell"') && !dx.includes('oneCellAnchor'), '照片設成隨儲存格移動和縮放（篩選時跟著那一列）'); }
 ok(hd2.includes('修繕前照片1') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
+// 不限筆數：超過一檔的量自動分成幾個檔
+{ await page.evaluate(() => { CHUNK.xl = 1; }); const names = [];
+  const got = new Promise(res => { const h = d => { names.push(d.suggestedFilename()); if (names.length === 2) { page.off('download', h); res(); } }; page.on('download', h); });
+  await page.click('#f-export-photo'); await Promise.race([got, page.waitForTimeout(20000)]);
+  await page.waitForTimeout(300); ok(names.length === 2 && (await page.textContent('#toast')).includes('分成 2 個檔'), 'Excel 含照片自動分檔：下載 2 個檔');
+  await page.evaluate(() => { CHUNK.xl = 150; }); }
 
 // ---- 匯出欄位自選 ----
 await page.click('#f-fields summary');
@@ -191,10 +199,15 @@ await page.click('#f-pdf'); await page.waitForTimeout(300);
 ok(await page.evaluate(() => window.__printed === 1 && window.__printSnap.includes('<table') && window.__printSnap.includes('品質查驗報表')), 'PDF（文字）：產生表格版面並呼叫列印');
 ok(await page.evaluate(() => (window.__printSnap.match(/<th>/g) || []).length === 4), 'PDF（文字）也只有勾的 4 欄');
 await page.check('#f-ph-after');
-await page.click('#f-pdf-photo'); await page.waitForTimeout(800);
-ok(await page.evaluate(() => window.__printed === 2 && (window.__printSnap.match(/<img/g) || []).length === 3 && window.__printSnap.includes('修繕後 1')), 'PDF（含照片）：每筆缺失一張卡片，3 張照片都在');
-await page.uncheck('#f-ph-before'); await page.click('#f-pdf-photo'); await page.waitForTimeout(800);
-ok(await page.evaluate(() => (window.__printSnap.match(/<img/g) || []).length === 1 && !window.__printSnap.includes('修繕前 1')), 'PDF：取消勾選修繕前就不附修繕前照片');
+{ const [d] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#f-pdf-photo')]); await d.saveAs('/tmp/claude-0/xl/photo.pdf');
+  const buf = fs.readFileSync('/tmp/claude-0/xl/photo.pdf'), txt = buf.toString('latin1');
+  ok(txt.startsWith('%PDF') && /\/Count 1\b/.test(txt) && (txt.match(/\/Subtype \/Image/g) || []).length === 1, 'PDF（含照片）：直接下載 PDF 檔，2 筆排在 1 頁');
+  ok(await page.evaluate(() => window.__printed === 1), 'PDF（含照片）不再跳列印視窗'); }
+{ await page.evaluate(() => { CHUNK.pdf = 1; }); const names = [];
+  const got = new Promise(res => { const h = d => { names.push(d.suggestedFilename()); if (names.length === 2) { page.off('download', h); res(); } }; page.on('download', h); });
+  await page.click('#f-pdf-photo'); await Promise.race([got, page.waitForTimeout(30000)]);
+  await page.waitForTimeout(300); ok(names.length === 2 && (await page.textContent('#toast')).includes('分成 2 個 PDF'), 'PDF（含照片）自動分檔：下載 2 個檔');
+  await page.evaluate(() => { CHUNK.pdf = 100; }); }
 await page.evaluate(() => { document.getElementById('print-root').innerHTML = ''; });
 ok(errors.length === 0, 'JS 錯誤：' + errors.join('|'));
 console.log(results.join('\n')); await browser.close(); process.exit(fail.length ? 1 : 0);
