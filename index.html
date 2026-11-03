@@ -4,10 +4,16 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
-<script>try{document.documentElement.dataset.skin=localStorage.getItem('qc-skin')||'pro'}catch(e){document.documentElement.dataset.skin='pro'}</script>
+<script>
+// 聖誕檔期（到 12/26）：每台裝置第一次打開自動換成聖誕外觀（之後自己改別的也可以）；檔期過了換回原本的外觀
+try{var L=localStorage,k=L.getItem('qc-skin')||'pro',on=new Date()<new Date(2026,11,27);
+if(on&&!L.getItem('qc-xmas2026')){L.setItem('qc-xmas2026','1');L.setItem('qc-skin-before-xmas',k);k='xmas';L.setItem('qc-skin',k)}
+if(!on&&L.getItem('qc-xmas2026')==='1'){L.setItem('qc-xmas2026','done');if(k==='xmas'){k=L.getItem('qc-skin-before-xmas')||'pro';L.setItem('qc-skin',k)}}
+document.documentElement.dataset.skin=k}catch(e){document.documentElement.dataset.skin='pro'}
+</script>
 <title>品質查驗系統</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;700&display=swap">
-<link rel="stylesheet" href="css/app.css?v=202611031030">
+<link rel="stylesheet" href="css/app.css?v=202611031045">
 </head>
 <body>
 
@@ -239,17 +245,17 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="config.js?v=202611031030"></script>
-<script src="js/core.js?v=202611031030"></script>
-<script src="js/planview.js?v=202611031030"></script>
-<script src="js/pick.js?v=202611031030"></script>
-<script src="js/annotate.js?v=202611031030"></script>
-<script src="js/sheet.js?v=202611031030"></script>
-<script src="js/report.js?v=202611031030"></script>
-<script src="js/admin.js?v=202611031030"></script>
-<script src="js/admin_excel.js?v=202611031030"></script>
-<script src="js/admin_import.js?v=202611031030"></script>
-<script src="js/jobs.js?v=202611031030"></script>
-<script src="js/main.js?v=202611031030"></script>
+<script src="config.js?v=202611031045"></script>
+<script src="js/core.js?v=202611031045"></script>
+<script src="js/planview.js?v=202611031045"></script>
+<script src="js/pick.js?v=202611031045"></script>
+<script src="js/annotate.js?v=202611031045"></script>
+<script src="js/sheet.js?v=202611031045"></script>
+<script src="js/report.js?v=202611031045"></script>
+<script src="js/admin.js?v=202611031045"></script>
+<script src="js/admin_excel.js?v=202611031045"></script>
+<script src="js/admin_import.js?v=202611031045"></script>
+<script src="js/jobs.js?v=202611031045"></script>
+<script src="js/main.js?v=202611031045"></script>
 </body>
 </html>
