@@ -175,10 +175,14 @@ ok((await page.textContent('#toast')).includes('至少勾一個欄位'), '沒勾
 for (const k of ['id', 'pos', 'item', 'status']) await page.check(`#f-fields input[data-field=${k}]`);
 { const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export')]); await dl.saveAs('/tmp/claude-0/xl/fields.xlsx');
   const wf = XLSX.readFile('/tmp/claude-0/xl/fields.xlsx'); const h = XLSX.utils.sheet_to_json(wf.Sheets['缺失清單'], { header: 1 })[0];
-  ok(h.join() === '編號,位置（棟 樓 戶）,缺失內容,狀態', '只匯出勾的欄位，順序固定：' + h.join());
+  ok(h.join() === '系統編號,位置（棟 樓 戶）,缺失內容,狀態', '只匯出勾的欄位，順序固定：' + h.join());
   const xml = (await import('child_process')).execSync('unzip -p /tmp/claude-0/xl/fields.xlsx xl/worksheets/sheet1.xml').toString();
   ok(xml.includes('orientation="landscape"') && xml.includes('fitToHeight="0"'), 'Excel 列印設定：橫向、寬度縮成一頁'); }
 ok((await page.evaluate(() => localStorage.getItem('qc-export-fields'))) === '["id","pos","item","status"]', '勾的欄位記在這台裝置');
+ok(await page.evaluate(async () => {   // 圖上編號：同戶同樓層同檢查類型照建立順序 1、2…，跟平面圖一樣
+  const T = window.__db.T, d1 = T.defects.find(d => d.id === 1);
+  T.defects.push({ ...d1, id: 990 }); await loadPinNos(T.defects.filter(d => d.id === 1 || d.id === 990 || d.id === 2));
+  const r = pinNos.get(1) === 1 && pinNos.get(990) === 2 && pinNos.get(2) === 1; T.defects.splice(T.defects.findIndex(d => d.id === 990), 1); return r; }), '圖上編號跟平面圖上的數字一致');
 // ---- 匯出排序 ----
 await page.click('#f-sort summary');
 ok((await page.textContent('#f-sort summary')).includes('編號↑'), '預設照編號排');

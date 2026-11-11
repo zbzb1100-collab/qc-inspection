@@ -115,9 +115,22 @@ async function photoCounts(ids) {
   return cnt;
 }
 // ---------- 匯出欄位：自己勾要哪些欄，每台裝置記住；Excel、PDF 都照這個 ----------
+// 圖上編號＝填寫頁平面圖上的數字：同一戶、同樓層、同檢查類型的缺失照建立順序 1、2、3…（跟 pick.js 的 S.unitDefects 一樣）
+let pinNos = new Map();
+async function loadPinNos(rows) {
+  pinNos = new Map(); const units = [...new Set(rows.map(r => r.unit_id).filter(Boolean))], all = [];
+  for (let i = 0; i < units.length; i += 100) {
+    for (let from = 0; ; from += 1000) {
+      const { data, error } = await sb.from('defects').select('id,unit_id,floor,inspect_type_id').in('unit_id', units.slice(i, i + 100)).order('id').range(from, from + 999);
+      if (error) throw error; all.push(...data); if (data.length < 1000) break;
+    }
+  }
+  const seen = {}; all.sort((a, b) => a.id - b.id).forEach(d => { const k = `${d.unit_id}|${d.floor}|${d.inspect_type_id}`; seen[k] = (seen[k] || 0) + 1; pinNos.set(d.id, seen[k]); });
+}
+const needPin = fields => fields.some(f => f[0] === 'pinno');
 const pos = d => `${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}`;
 const EXPORT_FIELDS = [   // [key, 欄名, Excel 欄寬, 取值]
-  ['id', '編號', 6, d => d.id], ['cat_at', '建立日期', 12, d => fmtTime(d.created_at).slice(0, 10)], ['site', '案場', 10, d => M.name('sites', d.site_id)], ['itype', '檢查類型', 10, d => M.name('inspect_types', d.inspect_type_id)],
+  ['id', '系統編號', 6, d => d.id], ['pinno', '圖上編號', 6, d => pinNos.get(d.id) ?? ''], ['cat_at', '建立日期', 12, d => fmtTime(d.created_at).slice(0, 10)], ['site', '案場', 10, d => M.name('sites', d.site_id)], ['itype', '檢查類型', 10, d => M.name('inspect_types', d.inspect_type_id)],
   ['pos', '位置（棟 樓 戶）', 14, pos], ['bld', '棟別', 8, d => M.name('buildings', d.building_id)], ['floor', '樓層', 6, d => d.floor], ['unit', '戶別', 12, d => M.unitCode(d.unit_id)],
   ['cust', '客戶名稱', 12, d => d.customer_name || ''], ['space', '空間', 10, d => M.name('spaces', d.space_id)], ['cat', '工項', 14, d => M.name('categories', d.category_id)],
   ['item', '缺失內容', 28, d => M.name('items', d.item_id)], ['method', '修繕方式', 8, d => M.name('repair_methods', d.repair_method_id)],
@@ -128,7 +141,7 @@ const EXPORT_FIELDS = [   // [key, 欄名, Excel 欄寬, 取值]
   ['cby', '建立者', 10, d => M.userName(d.created_by)],
   ['uby', '最後修改者', 10, d => M.userName(d.updated_by)], ['uat', '最後修改時間', 16, d => fmtTime(d.updated_at)],
   ['nb', '修繕前照片數', 8, (d, c) => (c[d.id] || {}).before || 0], ['na', '修繕後照片數', 8, (d, c) => (c[d.id] || {}).after || 0]];
-const FIELDS_COMMON = ['id', 'cat_at', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'planned', 'status', 'desc'];
+const FIELDS_COMMON = ['pinno', 'cat_at', 'itype', 'bld', 'floor', 'unit', 'space', 'cat', 'item', 'fixv', 'planned', 'status', 'desc'];
 const FIELDS_KEY = 'qc-export-fields';
 let expFields = (() => { try { const v = JSON.parse(localStorage.getItem(FIELDS_KEY)); if (Array.isArray(v) && v.length) return v.filter(k => EXPORT_FIELDS.some(f => f[0] === k)); } catch (e) {} return FIELDS_COMMON.slice(); })();
 const chosenFields = () => EXPORT_FIELDS.filter(f => expFields.includes(f[0]));
@@ -164,7 +177,7 @@ const floorKey = f => { f = String(f || '').toUpperCase(); let m;
   if (f.startsWith('PR')) return 2000; return f ? 3000 : -9999; };
 const STATUS_ORDER = d => isNofix(d) ? 1 : ({ todo: 0, fixed: 2, signing: 3, closed: 4 })[d.status] ?? 9;
 const SORT_KEYS = [   // [key, 名稱, 產生排序用的取值函式（每次匯出前建一次對照表）]
-  ['id', '編號', () => d => d.id], ['cat_at', '建立時間', () => d => d.created_at || ''], ['uat', '最後修改時間', () => d => d.updated_at || ''],
+  ['id', '系統編號', () => d => d.id], ['cat_at', '建立時間', () => d => d.created_at || ''], ['uat', '最後修改時間', () => d => d.updated_at || ''],
   ['itype', '檢查類型', () => { const m = listIdx('inspect_types'); return d => m.get(d.inspect_type_id) ?? 1e9; }],
   ['bld', '棟別', () => { const m = listIdx('buildings'); return d => m.get(d.building_id) ?? 1e9; }],
   ['floor', '樓層', () => d => floorKey(d.floor)],
@@ -240,6 +253,7 @@ $('f-export').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const fields = needFields();
   const cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(shownRows().map(r => r.id)) : {};
+  if (needPin(fields)) await loadPinNos(shownRows());
   if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
   const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單');
   const rows = sortedRows(), data = rows.map(d => fields.map(f => f[3](d, cnt)));
@@ -301,6 +315,7 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   const fields = needFields(), all = sortedRows(), parts = chunksOf(all, CHUNK.xl);
   if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
   const cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(all.map(r => r.id)) : {};
+  if (needPin(fields)) await loadPinNos(all);
   let nImg = 0;
   for (let k = 0; k < parts.length; k++) {
     const rows = parts[k], label = parts.length > 1 ? `第 ${k + 1}／${parts.length} 檔：` : '';
@@ -374,6 +389,7 @@ $('f-pdf').onclick = e => guard(e.currentTarget, async () => {
   const root = $('print-root'); const rows = sortedRows();
   printHead(root, '品質查驗報表', rows.length);
   const fields = needFields(), cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(rows.map(r => r.id)) : {};
+  if (needPin(fields)) await loadPinNos(rows);
   const t = el('table'); const th = el('thead'); const hr = el('tr');
   fields.forEach(f => hr.appendChild(el('th', null, f[1])));
   th.appendChild(hr); t.appendChild(th); const tb = el('tbody');
@@ -399,7 +415,7 @@ function wrapText(g, text, maxW) {                         // 中文逐字換行
 }
 function cardLines(d) {
   return [
-    ['b', `#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${statusText(d)}${d.close_type && !isNofix(d) ? '・' + d.close_type : ''}］`],
+    ['b', `${pinNos.has(d.id) ? '圖上 ' + pinNos.get(d.id) + '　' : ''}#${d.id}　${M.name('buildings', d.building_id)} ${d.floor} ${M.unitCode(d.unit_id)}　${M.name('spaces', d.space_id) || ''}　［${statusText(d)}${d.close_type && !isNofix(d) ? '・' + d.close_type : ''}］`],
     ['n', `${M.name('categories', d.category_id)}　${M.name('items', d.item_id)}`],
     ['s', `修繕廠商：${M.name('vendors', d.fix_vendor_id) || '—'}　責任廠商：${M.name('vendors', d.resp_vendor_id) || '—'}　預計：${d.planned_date || '—'}　實際：${d.fixed_date || '—'}`],
     ...(d.description ? [['s', '說明：' + d.description]] : []), ...(d.close_reason ? [['s', '不修原因：' + d.close_reason]] : [])];
@@ -443,6 +459,7 @@ $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
   if (!window.jspdf) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  await loadPinNos(shownRows());
   const all = sortedRows(), parts = chunksOf(all, CHUNK.pdf), made = fmtTime(new Date().toISOString()), filt = filterSummary();
   const cv = document.createElement('canvas'); cv.width = PG.W; cv.height = PG.H; const g = cv.getContext('2d'); g.textBaseline = 'alphabetic';
   for (let k = 0; k < parts.length; k++) {
