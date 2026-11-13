@@ -276,8 +276,8 @@ function loadScriptOnce(src) {
   });
 }
 // 含照片的匯出不限筆數：系統自己切成幾個檔（每檔 CHUNK.xl／CHUNK.pdf 筆缺失），一檔做完、下載、放掉記憶體再做下一檔
-const PHOTO_PER_KIND = 3, CHUNK = { xl: 150, pdf: 100 };
-async function photosOf(ids, kinds, perKind) {          // 每筆缺失、每種照片最多 perKind 張
+const CHUNK = { xl: 150, pdf: 100, xlPhotos: 600, pdfPhotos: 500 };   // 每檔最多幾筆缺失、幾張照片（照片多就提早換下一檔，記憶體才夠）
+async function photosOf(ids, kinds, perKind = Infinity) {   // 每筆缺失、每種照片（不限張數）
   let photos = [];
   for (let i = 0; i < ids.length; i += 200) {
     const { data, error } = await sb.from('defect_photos').select('*').in('defect_id', ids.slice(i, i + 200)).in('kind', kinds).order('id').limit(5000);
@@ -301,7 +301,35 @@ async function loadPhotoBlobs(list, maxSide, quality, label) {   // 下載並縮
   return out;
 }
 const chunksOf = (a, n) => { const r = []; for (let i = 0; i < a.length; i += n) r.push(a.slice(i, i + n)); return r; };
+// 依筆數和照片數分檔：任一個到上限就換下一檔（一筆缺失照片再多也不拆開）
+function splitParts(rows, by, kinds, maxRows, maxPhotos) {
+  const parts = []; let cur = [], n = 0;
+  rows.forEach(d => {
+    const c = kinds.reduce((t, k) => t + (by[d.id + k] || []).length, 0);
+    if (cur.length && (cur.length >= maxRows || n + c > maxPhotos)) { parts.push(cur); cur = []; n = 0; }
+    cur.push(d); n += c;
+  });
+  if (cur.length) parts.push(cur);
+  return parts;
+}
 const partName = (k, n) => n > 1 ? `_第${k}檔共${n}檔` : '';
+// 拼圖：照片固定大小（每列 2 張、4:3），編號在左上角；一格最多 MOSAIC_MAX 張（Excel 一列最高約 545px），多的由呼叫的地方開下一列
+const MOSAIC_MAX = 8;
+async function photoMosaic(blobList, W, start = 0, showNo = true) {
+  const n = blobList.length, G = 4, c = Math.min(2, n), tw = (W - G) / 2, th = tw * 0.75, rowsN = Math.ceil(n / 2), h = rowsN * th + (rowsN - 1) * G;
+  const S = 2, cv = document.createElement('canvas'); cv.width = Math.round((c * tw + (c - 1) * G) * S); cv.height = Math.round(h * S); const g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  for (let i = 0; i < n; i++) {
+    const x = (i % 2) * (tw + G) * S, y = Math.floor(i / 2) * (th + G) * S, w = tw * S, hh = th * S;
+    g.fillStyle = '#f2f2f2'; g.fillRect(x, y, w, hh);
+    try { const bm = await createImageBitmap(blobList[i]), k = Math.min(w / bm.width, hh / bm.height);
+      g.drawImage(bm, x + (w - bm.width * k) / 2, y + (hh - bm.height * k) / 2, bm.width * k, bm.height * k); bm.close && bm.close(); } catch (e) {}
+    if (showNo) { const fs = 26, t = String(start + i + 1); g.font = `700 ${fs}px sans-serif`; g.fillStyle = 'rgba(0,0,0,.6)';
+      g.fillRect(x, y, g.measureText(t).width + fs * 0.6, fs * 1.3); g.fillStyle = '#fff'; g.fillText(t, x + fs * 0.3, y + fs * 1.05); }
+  }
+  const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.85));
+  return { buf: await blob.arrayBuffer(), w: Math.round(c * tw + (c - 1) * G), h: Math.round(h) };
+}
 const pause = ms => new Promise(r => setTimeout(r, ms));
 function downloadBlob(blob, name) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
@@ -312,38 +340,47 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
   const kinds = ['before', 'after'].filter(k => $(k === 'before' ? 'f-ph-before' : 'f-ph-after').checked);
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
-  const fields = needFields(), all = sortedRows(), parts = chunksOf(all, CHUNK.xl);
+  const fields = needFields(), all = sortedRows();
   if (!window.ExcelJS) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js');
   const cnt = fields.some(f => f[0] === 'nb' || f[0] === 'na') ? await photoCounts(all.map(r => r.id)) : {};
   if (needPin(fields)) await loadPinNos(all);
+  const byAll = await photosOf(all.map(r => r.id), kinds), parts = splitParts(all, byAll, kinds, CHUNK.xl, CHUNK.xlPhotos);
   let nImg = 0;
   for (let k = 0; k < parts.length; k++) {
     const rows = parts[k], label = parts.length > 1 ? `第 ${k + 1}／${parts.length} 檔：` : '';
-    const by = await photosOf(rows.map(r => r.id), kinds, PHOTO_PER_KIND);
-    const blobs = await loadPhotoBlobs(Object.values(by).flat(), 640, 0.7, label);   // Excel 內縮小，檔案才不會太大
+    const blobs = await loadPhotoBlobs(rows.flatMap(d => kinds.flatMap(kd => byAll[d.id + kd] || [])), 480, 0.75, label);   // Excel 內縮小，檔案才不會太大
     const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('缺失清單（含照片）');
     const textHead = fields.map(f => f[1]);
     const kindName = { before: '修繕前', after: '修繕後' };
-    const photoCols = []; kinds.forEach(kd => { const n = Math.max(1, ...rows.map(r => (by[r.id + kd] || []).length)); for (let j = 0; j < n; j++) photoCols.push({ kind: kd, j }); });
-    const head = textHead.concat(photoCols.map(c => `${kindName[c.kind]}照片${c.j + 1}`));
+    // 照片不限張數：每種照片固定一欄，同一筆的照片在格子裡每列 2 張排整齊（大小固定不縮），欄數不會變多
+    const head = textHead.concat(kinds.map(kd => `${kindName[kd]}照片`));
     ws.addRow(head);
-    // 照片欄寬剛好放一張照片＋左右留白；文字欄收窄（列夠高，長字會換行），整張才不會因為縮成一頁寬而字太小
-    const IMG_W = 160, IMG_H = 120, PAD = 6, PCOL = 24;      // 欄寬 24 字 ≈ 173px，照片 160px＋左右留白
+    const PAD = 6, CW = 320, PCOL = 47;                      // 照片欄 47 字 ≈ 334px，拼圖寬 320px
     const data = rows.map(d => fields.map(f => f[3](d, cnt))), tw = colWidths(fields, data, 16);
     ws.columns = head.map((h, i) => ({ width: i < textHead.length ? tw[i] : PCOL }));
-    data.forEach(v => ws.addRow(v));
+    // 一筆缺失照片超過 MOSAIC_MAX 張：下面多開「續」列接著放（照片不縮小）；續列也填同樣的文字（淡灰色），Excel 篩選時整組一起留下
+    const plan = rows.map(d => { const ps = kinds.map(kd => (byAll[d.id + kd] || []).filter(p => blobs.has(p.id))); return { d, ps, n: Math.max(1, ...ps.map(x => Math.ceil(x.length / MOSAIC_MAX))) }; });
+    const cont = [];
+    plan.forEach((pl, i) => { for (let j = 0; j < pl.n; j++) { ws.addRow(data[i]); if (j) cont.push(ws.rowCount); } });
     sheetStyle(ws, head.length, 'middle');
-    for (let r = 0; r < rows.length; r++) {
-      const d = rows[r];
-      const has = photoCols.some(c => (by[d.id + c.kind] || [])[c.j]);
-      if (has) ws.getRow(r + 2).height = (IMG_H + 2 * PAD) * 0.75;
-      for (let ci = 0; ci < photoCols.length; ci++) {
-        const c = photoCols[ci], p = (by[d.id + c.kind] || [])[c.j], b = p && blobs.get(p.id); if (!b) continue;
-        const id = wb.addImage({ buffer: await b.arrayBuffer(), extension: 'jpeg' }); nImg++;
-        // 照片的左上、右下都釘在同一格裡（twoCellAnchor＝隨儲存格移動和調整大小）：Excel 篩選、排序、隱藏列時照片跟著那一列走
-        const col = textHead.length + ci, row = r + 1, px = 9525;   // 1 像素 = 9525 EMU
-        ws.addImage(id, { tl: { nativeCol: col, nativeColOff: PAD * px, nativeRow: row, nativeRowOff: PAD * px },
-          br: { nativeCol: col, nativeColOff: (PAD + IMG_W) * px, nativeRow: row, nativeRowOff: (PAD + IMG_H) * px }, editAs: 'twoCell' });
+    cont.forEach(rn => { for (let c = 1; c <= textHead.length; c++) ws.getRow(rn).getCell(c).font = { ...XL_FONT, color: { argb: 'FFB0B0B0' } }; });
+    let rowNo = 1;                                          // 0-based：第 1 列是標題
+    for (const pl of plan) {
+      for (let j = 0; j < pl.n; j++, rowNo++) {
+        const tiles = [];
+        for (let ci = 0; ci < kinds.length; ci++) {
+          const part = pl.ps[ci].slice(j * MOSAIC_MAX, (j + 1) * MOSAIC_MAX); if (!part.length) continue;
+          tiles.push({ ci, ...(await photoMosaic(part.map(p => blobs.get(p.id)), CW, j * MOSAIC_MAX, pl.ps[ci].length > 1)) }); nImg += part.length;
+        }
+        if (!tiles.length) continue;
+        ws.getRow(rowNo + 1).height = (Math.max(...tiles.map(t => t.h)) + 2 * PAD) * 0.75;
+        tiles.forEach(t => {
+          const id = wb.addImage({ buffer: t.buf, extension: 'jpeg' });
+          // 拼圖的左上、右下都釘在同一格裡（twoCellAnchor＝隨儲存格移動和調整大小）：Excel 篩選、排序、隱藏列時照片跟著那一列走
+          const col = textHead.length + t.ci, px = 9525;    // 1 像素 = 9525 EMU
+          ws.addImage(id, { tl: { nativeCol: col, nativeColOff: PAD * px, nativeRow: rowNo, nativeRowOff: PAD * px },
+            br: { nativeCol: col, nativeColOff: (PAD + t.w) * px, nativeRow: rowNo, nativeRowOff: (PAD + t.h) * px }, editAs: 'twoCell' });
+        });
       }
     }
     sheetPrintSetup(ws);
@@ -352,7 +389,7 @@ $('f-export-photo').onclick = e => guard(e.currentTarget, async () => {
       `品質查驗報表_含照片_${today8()}${partName(k + 1, parts.length)}.xlsx`);
     if (k < parts.length - 1) await pause(1200);          // 連續下載中間停一下，瀏覽器才不會擋
   }
-  toast(parts.length > 1 ? `已匯出 ${all.length} 筆、${nImg} 張照片，分成 ${parts.length} 個檔（每檔 ${CHUNK.xl} 筆）` : `已匯出 ${all.length} 筆、${nImg} 張照片`);
+  toast(parts.length > 1 ? `已匯出 ${all.length} 筆、${nImg} 張照片，分成 ${parts.length} 個檔` : `已匯出 ${all.length} 筆、${nImg} 張照片`);
 });
 
 // ---------- 匯出 PDF（用瀏覽器列印，目的地選「另存為 PDF」）----------
@@ -422,37 +459,51 @@ function cardLines(d) {
 }
 const FONT = { b: `700 26px ${PFONT}`, n: `500 23px ${PFONT}`, s: `400 21px ${PFONT}`, cap: `400 18px ${PFONT}` }, LH = { b: 36, n: 33, s: 30 };
 const PCOLS = 3, PGAP = 14, CAP_H = 26, CPAD = 16;
-function layoutCard(g, d, kinds, by) {                      // 算出這張卡片要多高
+function layoutCard(g, d, kinds, by) {                      // 卡片拆成一段一段：文字、每一排照片；放不下時可以在段落之間換頁
   const iw = PG.W - 2 * PG.M - 2 * CPAD, lines = [];
   cardLines(d).forEach(([t, txt]) => { g.font = FONT[t]; wrapText(g, txt, iw).forEach(l => lines.push([t, l])); });
-  const cw = (iw - (PCOLS - 1) * PGAP) / PCOLS, ch = Math.round(cw * 0.75);
-  const groups = kinds.map(k => ({ k, ps: by[d.id + k] || [] })).filter(x => x.ps.length);
-  const prow = groups.reduce((n, x) => n + Math.ceil(x.ps.length / PCOLS), 0);
-  const h = CPAD * 2 + lines.reduce((n, [t]) => n + LH[t], 0) + (prow ? 8 + prow * (ch + CAP_H + PGAP) : 0);
-  return { lines, groups, cw, ch, h };
+  const cw = (iw - (PCOLS - 1) * PGAP) / PCOLS, ch = Math.round(cw * 0.75), segs = [];
+  segs.push({ t: 'text', lines, h: lines.reduce((n, [t]) => n + LH[t], 0) });
+  kinds.forEach(k => { const ps = by[d.id + k] || []; for (let i = 0; i < ps.length; i += PCOLS) segs.push({ t: 'photos', k, ps: ps.slice(i, i + PCOLS), start: i, h: ch + CAP_H + PGAP }); });
+  if (segs.length > 1) segs[1].gap = 8;
+  return { d, segs, cw, ch, h: CPAD * 2 + segs.reduce((n, x) => n + x.h + (x.gap || 0), 0) };
 }
-async function drawCard(g, y, L, blobs) {
-  const x0 = PG.M, w = PG.W - 2 * PG.M;
-  g.strokeStyle = '#888'; g.lineWidth = 2; g.strokeRect(x0, y, w, L.h);
-  let cy = y + CPAD;
-  L.lines.forEach(([t, l]) => { g.font = FONT[t]; g.fillStyle = t === 's' ? '#333' : '#000'; g.fillText(l, x0 + CPAD, cy + LH[t] - 9); cy += LH[t]; });
-  if (L.groups.length) cy += 8;
-  for (const { k, ps } of L.groups) {
-    for (let j = 0; j < ps.length; j++) {
-      const col = j % PCOLS, px = x0 + CPAD + col * (L.cw + PGAP);
-      if (j && !col) cy += L.ch + CAP_H + PGAP;
-      g.strokeStyle = '#bbb'; g.lineWidth = 1; g.strokeRect(px, cy, L.cw, L.ch);
-      const b = blobs.get(ps[j].id);
-      if (b) {
-        try {
-          const bm = await createImageBitmap(b), s = Math.min(L.cw / bm.width, L.ch / bm.height), dw = bm.width * s, dh = bm.height * s;
-          g.drawImage(bm, px + (L.cw - dw) / 2, cy + (L.ch - dh) / 2, dw, dh); bm.close && bm.close();
-        } catch (err) { console.warn('照片畫不出來', err); }
-      }
-      g.font = FONT.cap; g.fillStyle = '#444'; g.fillText(`${k === 'before' ? '修繕前' : '修繕後'} ${j + 1}`, px, cy + L.ch + 20);
+async function drawSeg(g, x0, cy, sg, L, blobs) {
+  if (sg.t === 'text') { sg.lines.forEach(([t, l]) => { g.font = FONT[t]; g.fillStyle = t === 's' ? '#333' : '#000'; g.fillText(l, x0 + CPAD, cy + LH[t] - 9); cy += LH[t]; }); return; }
+  for (let j = 0; j < sg.ps.length; j++) {
+    const px = x0 + CPAD + j * (L.cw + PGAP);
+    g.strokeStyle = '#bbb'; g.lineWidth = 1; g.strokeRect(px, cy, L.cw, L.ch);
+    const b = blobs.get(sg.ps[j].id);
+    if (b) {
+      try {
+        const bm = await createImageBitmap(b), s = Math.min(L.cw / bm.width, L.ch / bm.height), dw = bm.width * s, dh = bm.height * s;
+        g.drawImage(bm, px + (L.cw - dw) / 2, cy + (L.ch - dh) / 2, dw, dh); bm.close && bm.close();
+      } catch (err) { console.warn('照片畫不出來', err); }
     }
-    cy += L.ch + CAP_H + PGAP;
+    g.font = FONT.cap; g.fillStyle = '#444'; g.fillText(`${sg.k === 'before' ? '修繕前' : '修繕後'} ${sg.start + j + 1}`, px, cy + L.ch + 20);
   }
+}
+// 畫一張卡片；pg.y 是目前位置，pg.newPage() 換頁。整張放得下就不拆；比一頁還高（照片很多）就一段一段畫，換頁後標「（續）」
+async function drawCard(g, pg, L, blobs) {
+  const x0 = PG.M, w = PG.W - 2 * PG.M, bottom = PG.H - PG.M, full = bottom - PG.M;
+  const head = CPAD * 2 + L.segs.slice(0, 2).reduce((n, x) => n + x.h + (x.gap || 0), 0);   // 文字＋第一排照片
+  if (pg.y > PG.M && (L.h <= full ? pg.y + L.h > bottom : pg.y + head > bottom)) pg.newPage();   // 放得進一頁的卡片不拆；很長的卡片這頁還放得下開頭就先接著畫
+  if (L.h <= full) {
+    g.strokeStyle = '#888'; g.lineWidth = 2; g.strokeRect(x0, pg.y, w, L.h);
+    let cy = pg.y + CPAD; for (const sg of L.segs) { cy += sg.gap || 0; await drawSeg(g, x0, cy, sg, L, blobs); cy += sg.h; }
+    pg.y += L.h; return;
+  }
+  let top = pg.y, cy = pg.y + CPAD;
+  for (const sg of L.segs) {
+    if (cy + (sg.gap || 0) + sg.h + CPAD > bottom) {         // 這頁放不下下一段：先把這頁的框畫好，換頁接著畫
+      g.strokeStyle = '#888'; g.lineWidth = 2; g.strokeRect(x0, top, w, cy - top + CPAD);
+      pg.newPage(); top = pg.y; cy = pg.y + CPAD;
+      g.font = FONT.s; g.fillStyle = '#666'; g.fillText(`${pinNos.has(L.d.id) ? '圖上 ' + pinNos.get(L.d.id) + '　' : ''}#${L.d.id}（續）`, x0 + CPAD, cy + LH.s - 9); cy += LH.s;
+    } else cy += sg.gap || 0;
+    await drawSeg(g, x0, cy, sg, L, blobs); cy += sg.h;
+  }
+  g.strokeStyle = '#888'; g.lineWidth = 2; g.strokeRect(x0, top, w, cy - top + CPAD);
+  pg.y = cy + CPAD;
 }
 $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   if (!shownRows().length) { toast('目前沒有資料可匯出'); return; }
@@ -460,12 +511,12 @@ $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
   if (!kinds.length) throw new Error('請至少勾選一種照片（修繕前或修繕後）');
   if (!window.jspdf) await loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
   await loadPinNos(shownRows());
-  const all = sortedRows(), parts = chunksOf(all, CHUNK.pdf), made = fmtTime(new Date().toISOString()), filt = filterSummary();
+  const all = sortedRows(), byAll = await photosOf(all.map(r => r.id), kinds), parts = splitParts(all, byAll, kinds, CHUNK.pdf, CHUNK.pdfPhotos);
+  const made = fmtTime(new Date().toISOString()), filt = filterSummary(); let first = 0;
   const cv = document.createElement('canvas'); cv.width = PG.W; cv.height = PG.H; const g = cv.getContext('2d'); g.textBaseline = 'alphabetic';
   for (let k = 0; k < parts.length; k++) {
     const rows = parts[k], label = parts.length > 1 ? `第 ${k + 1}／${parts.length} 檔：` : '';
-    const by = await photosOf(rows.map(r => r.id), kinds, 4);
-    const blobs = await loadPhotoBlobs(Object.values(by).flat(), 900, 0.8, label);
+    const by = byAll, blobs = await loadPhotoBlobs(rows.flatMap(d => kinds.flatMap(kd => by[d.id + kd] || [])), 900, 0.8, label);
     const doc = new jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
     let page = 0, y = 0;
     const flush = () => {
@@ -476,19 +527,19 @@ $('f-pdf-photo').onclick = e => guard(e.currentTarget, async () => {
     newPage();
     g.font = `700 38px ${PFONT}`; g.fillStyle = '#000'; g.fillText('品質查驗報表（含照片）', PG.M, y + 36); y += 52;
     g.font = FONT.s; g.fillStyle = '#333';
-    wrapText(g, `${made}　共 ${all.length} 筆${parts.length > 1 ? `　本檔第 ${k * CHUNK.pdf + 1}～${k * CHUNK.pdf + rows.length} 筆（第 ${k + 1}／${parts.length} 檔）` : ''}　篩選：${filt}`, PG.W - 2 * PG.M)
+    wrapText(g, `${made}　共 ${all.length} 筆${parts.length > 1 ? `　本檔第 ${first + 1}～${first + rows.length} 筆（第 ${k + 1}／${parts.length} 檔）` : ''}　篩選：${filt}`, PG.W - 2 * PG.M)
       .forEach(l => { g.fillText(l, PG.M, y + 22); y += 30; });
     y += 14;
+    const pg = { get y() { return y; }, set y(v) { y = v; }, newPage };
     for (let i = 0; i < rows.length; i++) {
-      const L = layoutCard(g, rows[i], kinds, by);
-      if (y + L.h > PG.H - PG.M && y > PG.M) newPage();   // 放不下就換頁（卡片不拆開）
-      await drawCard(g, y, L, blobs); y += L.h + 16;
+      await drawCard(g, pg, layoutCard(g, rows[i], kinds, by), blobs); y += 16;
       if (i % 10 === 9) toast(`${label}排版 ${i + 1} / ${rows.length} 筆…`);
     }
     flush();
     toast(`${label}產生 PDF…`);
     downloadBlob(doc.output('blob'), `品質查驗報表_含照片_${today8()}${partName(k + 1, parts.length)}.pdf`);
+    first += rows.length;
     if (k < parts.length - 1) await pause(1200);
   }
-  toast(parts.length > 1 ? `已匯出 ${all.length} 筆，分成 ${parts.length} 個 PDF（每檔 ${CHUNK.pdf} 筆）` : `已匯出 ${all.length} 筆`);
+  toast(parts.length > 1 ? `已匯出 ${all.length} 筆，分成 ${parts.length} 個 PDF` : `已匯出 ${all.length} 筆`);
 });

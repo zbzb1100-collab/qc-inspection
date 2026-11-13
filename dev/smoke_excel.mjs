@@ -153,14 +153,23 @@ await dp.saveAs('/tmp/claude-0/xl/photo.xlsx');
 const zipList = (await import('child_process')).execSync('unzip -l /tmp/claude-0/xl/photo.xlsx').toString();
 ok((zipList.match(/xl\/media\/image\d+\.jpeg/g) || []).length === 3, '含照片匯出：3 張照片都嵌入 Excel');
 const w4 = XLSX.readFile('/tmp/claude-0/xl/photo.xlsx'); const hd = XLSX.utils.sheet_to_json(w4.Sheets[w4.SheetNames[0]], { header: 1 })[0];
-ok(hd.includes('修繕前照片1') && hd.includes('修繕後照片1'), '含照片匯出：有修繕前、修繕後欄位');
+ok(hd.includes('修繕前照片') && hd.includes('修繕後照片') && hd.length === new Set(hd).size, '含照片匯出：修繕前、修繕後各一欄');
 await page.uncheck('#f-ph-after');
 const [dp2] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#f-export-photo')]);
 await dp2.saveAs('/tmp/claude-0/xl/photo2.xlsx');
 const hd2 = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/photo2.xlsx').Sheets['缺失清單（含照片）'], { header: 1 })[0];
 { const dx = (await import('child_process')).execSync('unzip -p /tmp/claude-0/xl/photo.xlsx xl/drawings/drawing1.xml').toString();
   ok(dx.includes('editAs="twoCell"') && !dx.includes('oneCellAnchor'), '照片設成隨儲存格移動和縮放（篩選時跟著那一列）'); }
-ok(hd2.includes('修繕前照片1') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
+ok(hd2.includes('修繕前照片') && !hd2.some(h => String(h).includes('修繕後')), '取消勾選修繕後就不附修繕後照片');
+// 不限張數：一筆 10 張修繕前 → 一格放 8 張（大小不縮），多的 2 張開「續」列，續列也有同樣文字（篩選時一起留下）
+await page.evaluate(() => { const T = window.__db.T; for (let i = 0; i < 9; i++) T.defect_photos.push({ id: 100 + i, defect_id: 1, kind: 'before', path: 'x' + i + '.jpg' }); });
+{ const [d] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#f-export-photo')]); await d.saveAs('/tmp/claude-0/xl/many.xlsx');
+  const rows = XLSX.utils.sheet_to_json(XLSX.readFile('/tmp/claude-0/xl/many.xlsx').Sheets['缺失清單（含照片）'], { header: 1 });
+  const ids = rows.slice(1).map(r => r[0]);
+  ok(rows.length === 4, '照片超過 8 張自動多開一列接著放：' + ids.join());
+  const mediaN = ((await import('child_process')).execSync('unzip -l /tmp/claude-0/xl/many.xlsx').toString().match(/xl\/media\/image\d+\.jpeg/g) || []).length;
+  ok(mediaN === 3, 'Excel 每格一張拼好的照片圖（3 格）：' + mediaN); }
+
 // 不限筆數：超過一檔的量自動分成幾個檔
 { await page.evaluate(() => { CHUNK.xl = 1; }); const names = [];
   const got = new Promise(res => { const h = d => { names.push(d.suggestedFilename()); if (names.length === 2) { page.off('download', h); res(); } }; page.on('download', h); });
@@ -205,7 +214,7 @@ ok(await page.evaluate(() => (window.__printSnap.match(/<th>/g) || []).length ==
 await page.check('#f-ph-after');
 { const [d] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#f-pdf-photo')]); await d.saveAs('/tmp/claude-0/xl/photo.pdf');
   const buf = fs.readFileSync('/tmp/claude-0/xl/photo.pdf'), txt = buf.toString('latin1');
-  ok(txt.startsWith('%PDF') && /\/Count 1\b/.test(txt) && (txt.match(/\/Subtype \/Image/g) || []).length === 1, 'PDF（含照片）：直接下載 PDF 檔，2 筆排在 1 頁');
+  ok(txt.startsWith('%PDF') && Number((txt.match(/\/Count (\d+)/) || [])[1]) >= 2, 'PDF（含照片）：直接下載 PDF 檔，照片多的那筆跨頁接著印');
   ok(await page.evaluate(() => window.__printed === 1), 'PDF（含照片）不再跳列印視窗'); }
 { await page.evaluate(() => { CHUNK.pdf = 1; }); const names = [];
   const got = new Promise(res => { const h = d => { names.push(d.suggestedFilename()); if (names.length === 2) { page.off('download', h); res(); } }; page.on('download', h); });
